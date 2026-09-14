@@ -121,7 +121,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab 
   const isModal = !!onClose;
 
   if (showForgot) {
-    const forgotPanel = <ForgotPasswordPanel onBack={() => setShowForgot(false)} />;
+    const forgotPanel = (
+      <div className="relative w-full max-w-md">
+        <ForgotPasswordPanel onBack={() => setShowForgot(false)} />
+      </div>
+    );
     if (isModal) return forgotPanel;
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#0A0A0A] via-[#111111] to-[#1a1a2e] flex items-center justify-center px-4">
@@ -535,101 +539,97 @@ function ForgotPasswordPanel({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0A0A0A] via-[#111111] to-[#1a1a2e] flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-md p-8 shadow-2xl">
-          <button onClick={onBack} className="text-white/40 hover:text-white/70 text-sm mb-6 flex items-center gap-2 transition-colors">
-            ← Back to Sign In
+    <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-md p-8 shadow-2xl">
+      <button onClick={onBack} className="text-white/40 hover:text-white/70 text-sm mb-6 flex items-center gap-2 transition-colors">
+        ← Back to Sign In
+      </button>
+
+      {step === 'request' && (
+        <>
+          <h2 className="text-white text-lg font-semibold mb-1">Reset your password</h2>
+          <p className="text-white/40 text-sm mb-6">Enter your account email and we'll send a reset token.</p>
+          <form onSubmit={handleRequest} className="space-y-4">
+            <input
+              id="forgot-email"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="engineer@company.com"
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 transition-all"
+            />
+            {error && <p className="text-red-400 text-sm">{error}</p>}
+            <button
+              id="btn-forgot-submit"
+              type="submit"
+              disabled={loading}
+              className="w-full bg-white text-[#0A0A0A] font-semibold py-3 rounded-xl text-sm hover:bg-white/90 disabled:opacity-50 transition-all cursor-pointer"
+            >
+              {loading ? 'Sending…' : 'Send Reset Token'}
+            </button>
+          </form>
+        </>
+      )}
+
+      {step === 'reset' && (
+        <>
+          <h2 className="text-white text-lg font-semibold mb-1">Enter new password</h2>
+          {info && <p className="text-emerald-400 text-sm mb-4">{info}</p>}
+          <form onSubmit={handleReset} className="space-y-4">
+            <input
+              id="reset-token"
+              type="text"
+              required
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Paste your reset token here"
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 transition-all font-mono"
+            />
+            <input
+              id="reset-new-password"
+              type="password"
+              required
+              minLength={6}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="New password"
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 transition-all"
+            />
+            <input
+              id="reset-confirm-password"
+              type="password"
+              required
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              placeholder="Confirm new password"
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 transition-all"
+            />
+            {error && <p className="text-red-400 text-sm">{error}</p>}
+            <button
+              id="btn-reset-submit"
+              type="submit"
+              disabled={loading}
+              className="w-full bg-white text-[#0A0A0A] font-semibold py-3 rounded-xl text-sm hover:bg-white/90 disabled:opacity-50 transition-all cursor-pointer"
+            >
+              {loading ? 'Resetting…' : 'Reset Password'}
+            </button>
+          </form>
+        </>
+      )}
+
+      {step === 'done' && (
+        <div className="text-center py-4">
+          <div className="text-4xl mb-4">✅</div>
+          <h2 className="text-white text-lg font-semibold mb-2">Password updated!</h2>
+          <p className="text-white/40 text-sm mb-6">You can now sign in with your new password.</p>
+          <button
+            onClick={onBack}
+            className="bg-white text-[#0A0A0A] font-semibold py-3 px-8 rounded-xl text-sm hover:bg-white/90 transition-all cursor-pointer"
+          >
+            Sign In
           </button>
-
-          {step === 'request' && (
-            <>
-              <h2 className="text-white text-lg font-semibold mb-1">Reset your password</h2>
-              <p className="text-white/40 text-sm mb-6">Enter your account email and we'll send a reset token.</p>
-              <form onSubmit={handleRequest} className="space-y-4">
-                <input
-                  id="forgot-email"
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="engineer@company.com"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 transition-all"
-                />
-                {error && <p className="text-red-400 text-sm">{error}</p>}
-                <button
-                  id="btn-forgot-submit"
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-white text-[#0A0A0A] font-semibold py-3 rounded-xl text-sm hover:bg-white/90 disabled:opacity-50 transition-all"
-                >
-                  {loading ? 'Sending…' : 'Send Reset Token'}
-                </button>
-              </form>
-            </>
-          )}
-
-          {step === 'reset' && (
-            <>
-              <h2 className="text-white text-lg font-semibold mb-1">Enter new password</h2>
-              {info && <p className="text-emerald-400 text-sm mb-4">{info}</p>}
-              <form onSubmit={handleReset} className="space-y-4">
-                <input
-                  id="reset-token"
-                  type="text"
-                  required
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  placeholder="Paste your reset token here"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 transition-all font-mono"
-                />
-                <input
-                  id="reset-new-password"
-                  type="password"
-                  required
-                  minLength={6}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="New password"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 transition-all"
-                />
-                <input
-                  id="reset-confirm-password"
-                  type="password"
-                  required
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  placeholder="Confirm new password"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 transition-all"
-                />
-                {error && <p className="text-red-400 text-sm">{error}</p>}
-                <button
-                  id="btn-reset-submit"
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-white text-[#0A0A0A] font-semibold py-3 rounded-xl text-sm hover:bg-white/90 disabled:opacity-50 transition-all"
-                >
-                  {loading ? 'Resetting…' : 'Reset Password'}
-                </button>
-              </form>
-            </>
-          )}
-
-          {step === 'done' && (
-            <div className="text-center py-4">
-              <div className="text-4xl mb-4">✅</div>
-              <h2 className="text-white text-lg font-semibold mb-2">Password updated!</h2>
-              <p className="text-white/40 text-sm mb-6">You can now sign in with your new password.</p>
-              <button
-                onClick={onBack}
-                className="bg-white text-[#0A0A0A] font-semibold py-3 px-8 rounded-xl text-sm hover:bg-white/90 transition-all"
-              >
-                Sign In
-              </button>
-            </div>
-          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
