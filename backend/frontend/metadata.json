@@ -1,6 +1,0 @@
-{
-  "name": "Engineering Drawing Comparison Tool",
-  "description": "Client-facing engineering drawing comparison interface with side-by-side CAD diffing, synchronized pan/zoom, overlay sliders, and schema-driven change reporting.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
