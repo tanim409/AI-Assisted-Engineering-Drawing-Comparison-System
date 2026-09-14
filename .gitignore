@@ -1,0 +1,46 @@
+# Root .gitignore for Monorepo
+
+# Environment configuration (secrets)
+backend/.env
+backend/.env.local
+backend/.env.*.local
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+.env
+.env.local
+
+# Allow committed example env templates
+!backend/.env.example
+!frontend/.env.example
+
+# Node / Dependencies / Builds
+**/node_modules/
+**/dist/
+**/build/
+**/coverage/
+.npm/
+
+# Python / Virtual Environments
+**/__pycache__/
+**/*.py[cod]
+*$py.class
+**/*.so
+.Python
+**/env/
+**/venv/
+**/myenv/
+**/ENV/
+**/*.egg-info/
+
+# IDE & Temporary Files
+.vscode/
+.idea/
+.commandcode/
+.kilo/
+*.swp
+*.swo
+*.log
+**/scratch/
+**/scratch_*.py
+backend/test_summary.pdf

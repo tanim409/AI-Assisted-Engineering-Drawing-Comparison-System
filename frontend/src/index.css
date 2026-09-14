@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+/* Material Design 3 type scale tokens (CAD Comparison Studio).
+ * NOTE: 'Google Sans' / 'Google Sans Text' are not publicly servable, so in
+ * practice the stack resolves to Inter (loaded via index.html) and then to
+ * system fonts. Keep this order so a locally-installed Google Sans still wins.
+ */
+@theme {
+  --font-sans: 'Google Sans', 'Google Sans Text', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Cyprus/Sand structural accent system (containers only — never status colors) */
+  --color-cyprus: #004741;
+  --color-cyprus-deep: #01332e;
+  --color-sand: #F0EDE4;
+  /* Warm vanilla page background (full-bleed sections only — cards stay white) */
+  --color-vanilla: #FAF8F3;
+}
+
+@layer base {
+  body {
+    background-color: #FAF8F3;
+    color: #0A0A0A;
+    font-family: 'Google Sans', 'Google Sans Text', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Print optimizations for Engineering Change Order (ECO) PDF exports */
+@media print {
+  body {
+    background-color: #FFFFFF !important;
+  }
+  header, #comparison-toolbar, #upload-screen-container, #table-search-input, #table-status-filter, #btn-open-export {
+    display: none !important;
+  }
+  #printable-eco-report {
+    border: none !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+}
