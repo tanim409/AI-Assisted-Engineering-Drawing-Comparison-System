@@ -57,6 +57,26 @@ def register(req: RegisterRequest, background_tasks: BackgroundTasks):
     }
 
 
+class GoogleAuthRequest(BaseModel):
+    id_token: str
+
+
+@router.post("/google")
+def google_auth(req: GoogleAuthRequest):
+    g_info = auth.verify_google_id_token(req.id_token)
+    user = auth.get_or_create_google_user(g_info["email"], g_info["google_id"])
+
+    if not user.get("is_active"):
+        raise HTTPException(status_code=400, detail="Account is disabled")
+
+    access_token = auth.create_access_token({"sub": str(user["user_id"]), "email": user["email"]})
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": sanitize_user(user),
+    }
+
+
 @router.post("/login")
 def login(req: LoginRequest):
     user = auth.get_user_by_email(req.email)

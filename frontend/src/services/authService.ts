@@ -92,6 +92,19 @@ export async function apiLogin(email: string, password: string): Promise<AuthUse
   return data.user as AuthUser;
 }
 
+export async function apiGoogleLogin(idToken: string): Promise<AuthUser> {
+  const res = await fetch(`${AUTH_BASE}/google`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id_token: idToken }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.detail || 'Google sign-in failed');
+  setToken(data.access_token);
+  storeUser(data.user);
+  return data.user as AuthUser;
+}
+
 export async function apiGetMe(): Promise<AuthUser> {
   const res = await authFetch(`${AUTH_BASE}/me`);
   const data = await res.json().catch(() => ({}));

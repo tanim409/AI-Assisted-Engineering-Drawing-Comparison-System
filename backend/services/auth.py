@@ -238,6 +238,71 @@ def create_user(email: str, password: str) -> Dict[str, Any]:
     return get_user_by_id(user_id)
 
 
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+
+def verify_google_id_token(id_token_str: str) -> Dict[str, Any]:
+    """Verify Google OAuth2 ID token via Google's tokeninfo API endpoint."""
+    import requests
+    try:
+        resp = requests.get(
+            f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token_str}",
+            timeout=10
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=401, detail="Invalid Google authentication token")
+        
+        info = resp.json()
+        # Verify audience if GOOGLE_CLIENT_ID is set
+        if GOOGLE_CLIENT_ID and info.get("aud") != GOOGLE_CLIENT_ID:
+            raise HTTPException(status_code=401, detail="Google token client ID mismatch")
+        
+        email = info.get("email")
+        google_sub = info.get("sub")
+        if not email or not google_sub:
+            raise HTTPException(status_code=401, detail="Google token missing required profile info")
+        
+        return {
+            "email": email,
+            "google_id": google_sub,
+            "email_verified": info.get("email_verified") == "true" or info.get("email_verified") is True,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Google token verification failed: {str(e)}")
+
+
+def get_or_create_google_user(email: str, google_id: str) -> Dict[str, Any]:
+    clean_email = normalize_email(email)
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            # Check by google_id first
+            cursor.execute("SELECT * FROM users WHERE google_id = %s", (google_id,))
+            user = cursor.fetchone()
+            if user:
+                return dict(user)
+
+            # Check by email
+            cursor.execute("SELECT * FROM users WHERE email = %s", (clean_email,))
+            user_by_email = cursor.fetchone()
+            if user_by_email:
+                # Link google_id to existing account and verify email
+                cursor.execute("""
+                    UPDATE users SET google_id = %s, email_verified = TRUE WHERE email = %s
+                """, (google_id, clean_email))
+                cursor.execute("SELECT * FROM users WHERE email = %s", (clean_email,))
+                return dict(cursor.fetchone())
+
+            # Create new Google user
+            cursor.execute("""
+                INSERT INTO users (email, google_id, email_verified, is_active)
+                VALUES (%s, %s, TRUE, TRUE)
+            """, (clean_email, google_id))
+            user_id = cursor.lastrowid
+
+    return get_user_by_id(user_id)
+
+
 def create_email_verification_token(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now() + timedelta(hours=24)

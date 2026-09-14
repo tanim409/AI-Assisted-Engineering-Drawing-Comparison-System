@@ -18,13 +18,25 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS users (
                     user_id        INT AUTO_INCREMENT PRIMARY KEY,
                     email          VARCHAR(255) NOT NULL UNIQUE,
-                    password_hash  VARCHAR(255) NOT NULL,
+                    password_hash  VARCHAR(255),
+                    google_id      VARCHAR(255) UNIQUE,
                     email_verified BOOLEAN NOT NULL DEFAULT FALSE,
                     created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     is_active      BOOLEAN NOT NULL DEFAULT TRUE,
-                    INDEX idx_users_email (email)
+                    INDEX idx_users_email (email),
+                    INDEX idx_users_google (google_id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
+            # Migration for existing databases
+            try:
+                cursor.execute("ALTER TABLE users MODIFY password_hash VARCHAR(255) NULL;")
+            except Exception:
+                pass
+
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN google_id VARCHAR(255) UNIQUE AFTER password_hash;")
+            except Exception:
+                pass
 
             # Password resets table
             cursor.execute("""
