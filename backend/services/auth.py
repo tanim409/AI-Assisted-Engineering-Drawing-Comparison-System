@@ -240,7 +240,7 @@ def create_user(email: str, password: str) -> Dict[str, Any]:
 
 def create_email_verification_token(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(hours=24)
+    expires_at = datetime.now() + timedelta(hours=24)
     with connect() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
@@ -268,7 +268,7 @@ def verify_email_token(token: str) -> bool:
 
 def create_password_reset_token(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(hours=2)
+    expires_at = datetime.now() + timedelta(hours=2)
     with connect() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
