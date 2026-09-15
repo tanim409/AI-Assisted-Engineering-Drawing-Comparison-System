@@ -321,7 +321,7 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
   return (
     <div>
       {/* Library header (unboxed — sits directly on the page) */}
-      <div className="px-1 py-2 flex flex-wrap items-center justify-between gap-3">
+      <div className="px-1 py-2 flex flex-wrap items-center justify-between gap-3 mb-2">
         <div className="flex items-center gap-3">
           {activeDrawingId ? (
             <button
@@ -330,7 +330,7 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
                 setHistory(null);
                 setSelectedPair({});
               }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-[#F5F5F5] text-[#525252] text-xs font-medium rounded-[8px] border border-[#E5E5E5] transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-[#F5F5F5] text-[#525252] hover:text-[#0A0A0A] text-xs font-medium rounded-[9999px] border border-[#E5E5E5] transition-colors cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Library</span>
@@ -338,7 +338,7 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
           ) : (
             <FolderOpen className="w-4 h-4 text-[#0A0A0A]" />
           )}
-          <h2 className="text-[18px] font-semibold text-[#0A0A0A] tracking-tight">
+          <h2 className="text-[19px] font-semibold text-[#0A0A0A] tracking-tight">
             {history ? history.name : 'Drawing Library'}
           </h2>
         </div>
@@ -371,19 +371,19 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
       </div>
 
       {error && (
-        <div className="mx-6 mt-4 px-4 py-2.5 rounded-[8px] bg-rose-50 border border-rose-200 text-xs font-mono text-rose-800">
+        <div className="mx-1 mb-4 px-4 py-2.5 rounded-[12px] bg-rose-50 border border-rose-200 text-xs font-sans text-rose-800">
           {error}
         </div>
       )}
       {jobMessage && (
-        <div className="mx-6 mt-4 px-4 py-2.5 rounded-[8px] bg-amber-50 border border-amber-200 text-xs font-mono text-amber-900 animate-pulse">
+        <div className="mx-1 mb-4 px-4 py-2.5 rounded-[12px] bg-amber-50 border border-amber-200 text-xs font-sans text-amber-900 animate-pulse">
           {jobMessage}
         </div>
       )}
 
       {!activeDrawingId ? (
         /* ---- Drawings / Reports main list ---- */
-        <div className="p-6 space-y-4">
+        <div className="py-2 space-y-4">
           {/* Sub-nav tabs (underline style) */}
           <div className="flex items-center gap-6 border-b border-[#E5E5E5]">
             <button
@@ -411,7 +411,7 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
           {activeTab === 'drawings' ? (
             <>
               {loading ? (
-                <p className="text-[13px] font-mono text-[#6b7280]">Loading drawings…</p>
+                <p className="text-[13px] text-[#6b7280]">Loading drawings…</p>
               ) : drawings.length === 0 ? (
                 <div className="flex flex-col items-center text-center py-12 px-6">
                   <span className="w-14 h-14 rounded-[14px] bg-white border border-cyprus/20 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)] flex items-center justify-center mb-4">
@@ -505,7 +505,7 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
                                   if (e.key === 'Enter') handleRename(d.drawing_id);
                                   if (e.key === 'Escape') setRenamingId(null);
                                 }}
-                                className="flex-1 min-w-0 px-2 py-1.5 text-xs bg-white border border-[#0A0A0A] rounded-[8px] focus:outline-none font-mono"
+                                className="flex-1 min-w-0 px-2 py-1.5 text-xs bg-white border border-[#0A0A0A] rounded-[8px] focus:outline-none"
                               />
                               <button
                                 onClick={() => handleRename(d.drawing_id)}
@@ -519,7 +519,7 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
                               className="inline-flex items-center gap-1.5"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <span className="text-[11px] font-mono text-rose-700">Remove?</span>
+                              <span className="text-[11px] text-rose-700">Remove?</span>
                               <button
                                 onClick={() => handleRemove(d.drawing_id)}
                                 className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold rounded-[8px] transition-colors cursor-pointer"
@@ -528,7 +528,7 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
                               </button>
                               <button
                                 onClick={() => setConfirmingRemoveId(null)}
-                                className="px-2.5 py-1.5 bg-white hover:bg-[#F5F5F5] text-[#525252] text-[11px] font-mono rounded-[8px] border border-[#E5E5E5] transition-colors cursor-pointer"
+                                className="px-2.5 py-1.5 bg-white hover:bg-[#F5F5F5] text-[#525252] text-[11px] rounded-[8px] border border-[#E5E5E5] transition-colors cursor-pointer"
                               >
                                 Cancel
                               </button>
@@ -538,7 +538,7 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
                               <p className="text-sm font-bold text-[#111827] tracking-tight truncate" title={d.name}>
                                 {d.name}
                               </p>
-                              <p className="text-[11px] font-mono text-[#6b7280]">
+                              <p className="text-[11px] text-[#6b7280]">
                                 {d.revision_count ?? '?'} revisions
                                 {detail?.updatedAt ? ` · ${detail.updatedAt}` : ''}
                               </p>
@@ -602,33 +602,33 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
             /* Reports Tab */
             <>
               {loading ? (
-                <p className="text-[13px] font-mono text-[#6b7280]">Loading comparison reports…</p>
+                <p className="text-[13px] text-[#6b7280]">Loading comparison reports…</p>
               ) : reports.length === 0 ? (
-                <p className="text-[13px] font-mono text-[#6b7280]">No saved comparison reports found.</p>
+                <p className="text-[13px] text-[#6b7280]">No saved comparison reports found.</p>
               ) : (
-                <ul className="divide-y divide-[#F5F5F5] border border-[#E5E5E5] rounded-[10px] overflow-hidden">
+                <ul className="divide-y divide-[#F5F5F5] border border-cyprus/20 rounded-[12px] overflow-hidden bg-white shadow-xs">
                   {reports.map((r) => (
-                    <li key={r.report_id} className="px-4 py-3 flex items-center justify-between gap-3 bg-white hover:bg-[#FAFAFA]">
+                    <li key={r.report_id} className="px-5 py-4 flex items-center justify-between gap-3 bg-white hover:bg-[#FAFAFA] transition-colors">
                       <button onClick={() => handleOpenReport(r.report_id)} className="text-left flex-1 cursor-pointer">
                         <span className="block text-sm font-semibold text-[#0A0A0A]">
                           Report {r.report_id.slice(0, 18)}…
                         </span>
-                        <span className="block text-xs font-mono text-[#6b7280]">
-                          {r.total_changes} deltas · {(r.overall_similarity * 100).toFixed(1)}% similarity · {r.total_pages} {r.total_pages === 1 ? 'page' : 'pages'} · {r.created_at}
+                        <span className="block text-xs text-[#6b7280] mt-0.5">
+                          {r.total_changes} deltas · {(r.overall_similarity * 100).toFixed(1)}% similarity · {r.total_pages} {r.total_pages === 1 ? 'page' : 'pages'} · <span className="font-mono">{r.created_at}</span>
                         </span>
                       </button>
                       {confirmingRemoveReportId === r.report_id ? (
                         <span className="inline-flex items-center gap-1.5">
-                          <span className="text-[11px] font-mono text-rose-700">Delete report?</span>
+                          <span className="text-[11px] text-rose-700">Delete report?</span>
                           <button
                             onClick={() => handleRemoveReport(r.report_id)}
-                            className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold rounded-[8px] transition-colors cursor-pointer"
+                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold rounded-[9999px] transition-colors cursor-pointer"
                           >
                             Delete
                           </button>
                           <button
                             onClick={() => setConfirmingRemoveReportId(null)}
-                            className="px-2.5 py-1.5 bg-white hover:bg-[#F5F5F5] text-[#525252] text-[11px] font-mono rounded-[8px] border border-[#E5E5E5] transition-colors cursor-pointer"
+                            className="px-3 py-1.5 bg-white hover:bg-[#F5F5F5] text-[#525252] text-[11px] rounded-[9999px] border border-[#E5E5E5] transition-colors cursor-pointer"
                           >
                             Cancel
                           </button>
@@ -645,10 +645,10 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
                           <button
                             onClick={() => handleOpenReport(r.report_id)}
                             disabled={busy}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] font-mono text-[#525252] hover:text-[#0A0A0A] bg-white hover:bg-[#F5F5F5] rounded-[9999px] border border-[#E5E5E5] transition-colors cursor-pointer disabled:opacity-50"
+                            className="inline-flex items-center gap-1 px-3.5 py-1.5 text-xs text-[#525252] hover:text-[#0A0A0A] bg-white hover:bg-[#F5F5F5] rounded-[9999px] border border-[#E5E5E5] transition-colors cursor-pointer disabled:opacity-50"
                           >
                             <span>Open Report</span>
-                            <ArrowRight className="w-3 h-3" />
+                            <ArrowRight className="w-3.5 h-3.5" />
                           </button>
                         </span>
                       )}
@@ -661,9 +661,9 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
         </div>
       ) : (
         /* ---- History view ---- */
-        <div className="p-6 space-y-5">
+        <div className="py-2 space-y-6">
           {historyLoading || !history ? (
-            <p className="text-[13px] font-mono text-[#6b7280]">Loading history…</p>
+            <p className="text-[13px] text-[#6b7280]">Loading history…</p>
           ) : (
             <>
               <HistoryRevisionList
@@ -678,15 +678,15 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
                 busy={busy}
               />
 
-              {/* Register new revision */}
-              <div className="border border-cyprus/20 rounded-[10px] p-4 bg-[#FAFAFA] space-y-3">
-                <p className="text-xs font-semibold text-[#0A0A0A] uppercase tracking-wider font-mono">
+              {/* Register new revision container */}
+              <div className="border border-cyprus/20 rounded-[12px] p-5 bg-sand/40 shadow-xs space-y-3">
+                <h3 className="text-sm font-semibold text-[#0A0A0A] tracking-tight">
                   Register new revision
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-white text-xs font-mono text-[#525252] border border-[#E5E5E5] rounded-[8px] cursor-pointer hover:border-[#0A0A0A]">
-                    <UploadCloud className="w-3.5 h-3.5" />
-                    <span>{revisionFile ? revisionFile.name : 'Choose file…'}</span>
+                </h3>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <label className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white text-xs text-[#525252] border border-[#E5E5E5] rounded-[8px] cursor-pointer hover:border-[#0A0A0A] transition-colors">
+                    <UploadCloud className="w-3.5 h-3.5 text-[#525252]" />
+                    <span className="truncate max-w-[200px]">{revisionFile ? revisionFile.name : 'Choose file…'}</span>
                     <input
                       type="file"
                       className="hidden"
@@ -698,12 +698,12 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
                     value={revisionLabel}
                     onChange={(e) => setRevisionLabel(e.target.value)}
                     placeholder="Label (optional)"
-                    className="px-3 py-2 text-xs bg-white border border-[#E5E5E5] rounded-[8px] focus:outline-none focus:border-[#0A0A0A] font-mono"
+                    className="px-3.5 py-2 text-xs bg-white border border-[#E5E5E5] rounded-[8px] focus:outline-none focus:border-cyprus text-[#0A0A0A]"
                   />
                   <button
                     onClick={handleRegisterRevision}
                     disabled={busy || !revisionFile}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-cyprus hover:bg-cyprus-deep disabled:opacity-50 text-white text-xs font-semibold rounded-[9999px] transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-cyprus hover:bg-cyprus-deep disabled:opacity-50 text-white text-xs font-semibold rounded-[9999px] transition-colors cursor-pointer shadow-xs"
                   >
                     <UploadCloud className="w-3.5 h-3.5" />
                     <span>Register</span>
@@ -733,6 +733,14 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
                   }}
                 />
               )}
+
+              {/* Helpful revision management tip container */}
+              <div className="border border-cyprus/15 rounded-[12px] p-4 bg-white/60 text-xs text-[#6b7280] space-y-1">
+                <p className="font-semibold text-[#0A0A0A]">Revision Tracking Tip</p>
+                <p className="leading-relaxed">
+                  Select any two revisions using the <span className="font-semibold text-cyprus font-mono">From</span> and <span className="font-semibold text-cyprus font-mono">To</span> controls above to perform instant vector & OCR differential analysis. Exports generated from this sequence will automatically label revisions consistently in order.
+                </p>
+              </div>
             </>
           )}
         </div>
@@ -769,9 +777,9 @@ function NewDrawingForm(props: {
           : 'border border-cyprus/30 rounded-[12px] bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)] p-4 flex flex-col gap-2.5 text-left'
       }
     >
-                        <p className="text-sm font-semibold text-[#111827] tracking-tight">
-                          Name your drawing
-                        </p>
+      <p className="text-sm font-semibold text-[#111827] tracking-tight">
+        Name your drawing
+      </p>
       <input
         autoFocus
         type="text"
@@ -795,7 +803,7 @@ function NewDrawingForm(props: {
         </button>
         <button
           onClick={onCancel}
-          className="px-2 py-1.5 text-xs font-mono text-[#525252] hover:text-[#0A0A0A] transition-colors cursor-pointer"
+          className="px-2 py-1.5 text-xs text-[#525252] hover:text-[#0A0A0A] transition-colors cursor-pointer"
         >
           Cancel
         </button>
@@ -820,7 +828,7 @@ function HistoryRevisionList(props: {
     onRemoveRevision, confirmingRemoveRevisionId, onConfirmRemoveRevision, busy,
   } = props;
   if (revisions.length === 0) {
-    return <p className="text-[13px] font-mono text-[#6b7280]">No revisions registered yet.</p>;
+    return <p className="text-[13px] text-[#6b7280]">No revisions registered yet.</p>;
   }
   const latest = revisions[revisions.length - 1];
   const previous = revisions.length > 1 ? revisions[revisions.length - 2] : null;
@@ -828,93 +836,97 @@ function HistoryRevisionList(props: {
   const toId = selectedPair.to ?? latest.revision_id;
 
   return (
-    <div className="space-y-3">
-      <p className="text-xs font-semibold text-[#0A0A0A] uppercase tracking-wider font-mono">Revisions</p>
-      <ul className="divide-y divide-[#F5F5F5] border border-[#E5E5E5] rounded-[10px] overflow-hidden">
-        {revisions.map((r) => (
-          <li key={r.revision_id} className="px-4 py-2.5 bg-white flex items-center justify-between gap-3">
-            <div>
-              <span className="text-sm font-semibold text-[#0A0A0A]">
-                V{r.sequence_number} · {r.revision_label}
-              </span>
-              <span className="block text-xs font-mono text-[#6b7280]">
-                {r.original_filename || ''} · {r.page_count} {r.page_count === 1 ? 'page' : 'pages'} · {r.uploaded_at}
-              </span>
-            </div>
-            {confirmingRemoveRevisionId === r.revision_id ? (
-              <span className="inline-flex items-center gap-1.5">
-                <span className="text-[11px] font-mono text-rose-700">Remove this version?</span>
-                <button
-                  onClick={() => onRemoveRevision(r.revision_id)}
-                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold rounded-[6px] transition-colors cursor-pointer"
-                >
-                  Remove
-                </button>
-                <button
-                  onClick={() => onConfirmRemoveRevision(null)}
-                  className="px-2.5 py-1 bg-white hover:bg-[#F5F5F5] text-[#525252] text-[11px] font-mono rounded-[6px] border border-[#E5E5E5] transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5">
-                <button
-                  onClick={() => onSelectPair({ ...selectedPair, from: r.revision_id })}
-                  title="Use as compare source (from)"
-                  className={`px-2.5 py-1 text-[11px] font-mono rounded-[6px] border transition-colors cursor-pointer ${
-                    fromId === r.revision_id
-                      ? 'bg-cyprus text-white border-cyprus'
-                      : 'bg-white text-[#525252] border-[#E5E5E5] hover:border-[#0A0A0A]'
-                  }`}
-                >
-                  From
-                </button>
-                <button
-                  onClick={() => onSelectPair({ ...selectedPair, to: r.revision_id })}
-                  title="Use as compare target (to)"
-                  className={`px-2.5 py-1 text-[11px] font-mono rounded-[6px] border transition-colors cursor-pointer ${
-                    toId === r.revision_id
-                      ? 'bg-cyprus text-white border-cyprus'
-                      : 'bg-white text-[#525252] border-[#E5E5E5] hover:border-[#0A0A0A]'
-                  }`}
-                >
-                  To
-                </button>
-                <button
-                  onClick={() => onConfirmRemoveRevision(r.revision_id)}
-                  title="Remove this version"
-                  className="p-1.5 rounded-[6px] text-[#A3A3A3] hover:text-rose-700 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
-      <button
-        onClick={() => onComparePair(fromId, toId)}
-        disabled={busy || !fromId || !toId || fromId === toId}
-        className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0A0A0A] hover:bg-[#171717] disabled:opacity-50 text-white text-xs font-semibold rounded-[9999px] transition-colors cursor-pointer"
-      >
-        <Play className="w-3.5 h-3.5" />
-        <span>Compare selected pair</span>
-      </button>
+    <div className="space-y-6">
+      {/* Revisions Section */}
+      <div className="space-y-3">
+        <h3 className="text-[15px] font-semibold text-[#0A0A0A] tracking-tight">Revisions</h3>
+        <ul className="divide-y divide-[#F5F5F5] border border-cyprus/20 rounded-[12px] overflow-hidden bg-white shadow-xs">
+          {revisions.map((r) => (
+            <li key={r.revision_id} className="px-5 py-4 bg-white flex items-center justify-between gap-3 hover:bg-[#FAFAFA] transition-colors">
+              <div>
+                <span className="text-sm font-semibold text-[#0A0A0A]">
+                  Rev {r.sequence_number}{r.revision_label ? ` (${r.revision_label})` : ''}
+                </span>
+                <span className="block text-xs text-[#6b7280] mt-0.5">
+                  {r.original_filename || 'File'} · {r.page_count} {r.page_count === 1 ? 'page' : 'pages'} · <span className="font-mono">{r.uploaded_at}</span>
+                </span>
+              </div>
+              {confirmingRemoveRevisionId === r.revision_id ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="text-[11px] text-rose-700">Remove this version?</span>
+                  <button
+                    onClick={() => onRemoveRevision(r.revision_id)}
+                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold rounded-[9999px] transition-colors cursor-pointer"
+                  >
+                    Remove
+                  </button>
+                  <button
+                    onClick={() => onConfirmRemoveRevision(null)}
+                    className="px-3 py-1.5 bg-white hover:bg-[#F5F5F5] text-[#525252] text-[11px] rounded-[9999px] border border-[#E5E5E5] transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-2">
+                  <button
+                    onClick={() => onSelectPair({ ...selectedPair, from: r.revision_id })}
+                    title="Use as compare source (from)"
+                    className={`px-3 py-1.5 text-xs font-medium rounded-[9999px] border transition-colors cursor-pointer ${
+                      fromId === r.revision_id
+                        ? 'bg-cyprus text-white border-cyprus shadow-xs'
+                        : 'bg-white text-[#525252] border-[#E5E5E5] hover:border-[#0A0A0A]'
+                    }`}
+                  >
+                    From
+                  </button>
+                  <button
+                    onClick={() => onSelectPair({ ...selectedPair, to: r.revision_id })}
+                    title="Use as compare target (to)"
+                    className={`px-3 py-1.5 text-xs font-medium rounded-[9999px] border transition-colors cursor-pointer ${
+                      toId === r.revision_id
+                        ? 'bg-cyprus text-white border-cyprus shadow-xs'
+                        : 'bg-white text-[#525252] border-[#E5E5E5] hover:border-[#0A0A0A]'
+                    }`}
+                  >
+                    To
+                  </button>
+                  <button
+                    onClick={() => onConfirmRemoveRevision(r.revision_id)}
+                    title="Remove this version"
+                    className="p-1.5 rounded-[8px] text-[#A3A3A3] hover:text-rose-700 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+        <button
+          onClick={() => onComparePair(fromId, toId)}
+          disabled={busy || !fromId || !toId || fromId === toId}
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-cyprus hover:bg-cyprus-deep disabled:opacity-50 text-white text-xs font-semibold rounded-[9999px] transition-colors cursor-pointer shadow-xs"
+        >
+          <Play className="w-3.5 h-3.5" />
+          <span>Compare selected pair</span>
+        </button>
+      </div>
 
+      {/* Comparisons Section */}
       {comparisons.length > 0 && (
-        <div className="space-y-2 pt-1">
-          <p className="text-xs font-semibold text-[#0A0A0A] uppercase tracking-wider font-mono">
-            All Comparisons
-          </p>
-          <ul className="divide-y divide-[#F5F5F5] border border-[#E5E5E5] rounded-[10px] overflow-hidden">
+        <div className="space-y-3 pt-2 border-t border-[#E5E5E5]/60">
+          <h3 className="text-[15px] font-semibold text-[#0A0A0A] tracking-tight">
+            All comparisons
+          </h3>
+          <ul className="divide-y divide-[#F5F5F5] border border-cyprus/20 rounded-[12px] overflow-hidden bg-white shadow-xs">
             {comparisons.map((pair) => (
-              <li key={`${pair.old_revision_id}-${pair.new_revision_id}`} className="px-4 py-2.5 bg-white flex items-center justify-between gap-3">
-                <span className="text-xs font-mono text-[#525252]">
-                  V{pair.old_sequence_number} → V{pair.new_sequence_number}
+              <li key={`${pair.old_revision_id}-${pair.new_revision_id}`} className="px-5 py-4 bg-white flex items-center justify-between gap-3 hover:bg-[#FAFAFA] transition-colors">
+                <span className="text-sm font-medium text-[#0A0A0A]">
+                  Rev {pair.old_sequence_number} → Rev {pair.new_sequence_number}
                   <span
-                    className={`ml-2 inline-block px-2 py-0.5 rounded-[6px] text-[10px] font-semibold ${
-                      pair.has_comparison ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-[#F5F5F5] text-[#A3A3A3] border border-[#E5E5E5]'
+                    className={`ml-3 inline-block px-2.5 py-0.5 rounded-[9999px] text-[11px] font-medium ${
+                      pair.has_comparison ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-[#F5F5F5] text-[#737373] border border-[#E5E5E5]'
                     }`}
                   >
                     {pair.has_comparison ? 'Compared' : 'Not compared'}
@@ -923,9 +935,9 @@ function HistoryRevisionList(props: {
                 <button
                   onClick={() => onComparePair(pair.old_revision_id, pair.new_revision_id)}
                   disabled={busy}
-                  className="inline-flex items-center gap-1 px-3 py-1 text-[11px] font-mono text-[#525252] hover:text-[#0A0A0A] bg-white hover:bg-[#F5F5F5] rounded-[9999px] border border-[#E5E5E5] transition-colors cursor-pointer disabled:opacity-50"
+                  className="inline-flex items-center gap-1 px-3.5 py-1.5 text-xs text-[#525252] hover:text-[#0A0A0A] bg-white hover:bg-[#F5F5F5] rounded-[9999px] border border-[#E5E5E5] transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  <Play className="w-3 h-3" />
+                  <Play className="w-3 h-3 text-[#525252]" />
                   <span>{pair.has_comparison ? 'View' : 'Compare'}</span>
                 </button>
               </li>
@@ -945,11 +957,11 @@ function QuickCompareResult(props: {
 }) {
   const { result, error, onOpenWorkspace, onDismiss } = props;
   return (
-    <div className="border border-[#0A0A0A] rounded-[10px] overflow-hidden bg-white">
+    <div className="border border-cyprus/30 rounded-[12px] overflow-hidden bg-white shadow-xs">
       <div className="px-4 py-3 bg-[#FAFAFA] border-b border-[#E5E5E5] flex items-center justify-between gap-3">
-        <p className="text-xs font-semibold text-[#0A0A0A] uppercase tracking-wider font-mono">
+        <h3 className="text-sm font-semibold text-[#0A0A0A] tracking-tight">
           Quick compare result
-        </p>
+        </h3>
         <span className="inline-flex items-center gap-1.5">
           {result && (
             <button
@@ -970,27 +982,27 @@ function QuickCompareResult(props: {
       </div>
       <div className="p-4 space-y-3">
         {error && (
-          <p className="px-3 py-2 rounded-[8px] bg-rose-50 border border-rose-200 text-xs font-mono text-rose-800">
+          <p className="px-3 py-2 rounded-[8px] bg-rose-50 border border-rose-200 text-xs text-rose-800">
             {error}
           </p>
         )}
         {result && (
           <>
-            <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
-              <span className="px-2.5 py-1 rounded-[8px] bg-[#FAFAFA] border border-[#E5E5E5] text-[#525252]">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="px-2.5 py-1 rounded-[9999px] bg-[#FAFAFA] border border-[#E5E5E5] text-[#525252]">
                 Similarity {(result.overallSimilarity * 100).toFixed(1)}%
               </span>
-              <span className="px-2.5 py-1 rounded-[8px] bg-amber-50 text-amber-900 border border-amber-200 font-bold">
+              <span className="px-2.5 py-1 rounded-[9999px] bg-amber-50 text-amber-900 border border-amber-200 font-bold">
                 {result.changes.length} Deltas Found
               </span>
               {result.comparisonMode && (
-                <span className="px-2.5 py-1 rounded-[8px] bg-[#FAFAFA] border border-[#E5E5E5] text-[#525252]">
+                <span className="px-2.5 py-1 rounded-[9999px] bg-[#FAFAFA] border border-[#E5E5E5] text-[#525252]">
                   {result.comparisonMode} mode
                 </span>
               )}
             </div>
             {result.changes.length === 0 ? (
-              <p className="text-[13px] font-mono text-[#6b7280]">No changes detected between the two files.</p>
+              <p className="text-[13px] text-[#6b7280]">No changes detected between the two files.</p>
             ) : (
               <ul className="divide-y divide-[#F5F5F5] border border-[#E5E5E5] rounded-[8px] overflow-hidden max-h-72 overflow-y-auto">
                 {result.changes.map((c) => (
@@ -1021,23 +1033,25 @@ function UploadAndCompareInline(props: {
 }) {
   const [oldFile, setOldFile] = useState<File | null>(null);
   const [newFile, setNewFile] = useState<File | null>(null);
+  const canCompare = !props.busy && !!oldFile && !!newFile;
+
   return (
-    <div className="border border-[#E5E5E5] rounded-[10px] p-4 bg-[#FAFAFA] space-y-3">
-      <p className="text-xs font-semibold text-[#0A0A0A] uppercase tracking-wider font-mono">
+    <div className="border border-cyprus/20 rounded-[12px] p-5 bg-sand/40 shadow-xs space-y-3">
+      <h3 className="text-sm font-semibold text-[#0A0A0A] tracking-tight">
         Quick compare without registering
-      </p>
+      </h3>
       {props.jobMessage && (
-        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-[8px] bg-amber-50 border border-amber-200">
-          <span className="text-xs font-mono text-amber-900 animate-pulse">{props.jobMessage}</span>
+        <div className="flex items-center justify-between gap-2 px-3.5 py-2 rounded-[8px] bg-amber-50 border border-amber-200">
+          <span className="text-xs text-amber-900 animate-pulse">{props.jobMessage}</span>
           <button
             onClick={props.onCancel}
-            className="px-2.5 py-1 text-[11px] font-mono bg-white hover:bg-[#F5F5F5] text-[#525252] rounded-[6px] border border-[#E5E5E5] transition-colors cursor-pointer"
+            className="px-2.5 py-1 text-[11px] bg-white hover:bg-[#F5F5F5] text-[#525252] rounded-[9999px] border border-[#E5E5E5] transition-colors cursor-pointer"
           >
             Cancel
           </button>
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2.5">
         {(
           [
             [oldFile, setOldFile, 'Old file…'],
@@ -1046,10 +1060,10 @@ function UploadAndCompareInline(props: {
         ).map(([file, setFile, label], i) => (
           <label
             key={i}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-white text-xs font-mono text-[#525252] border border-[#E5E5E5] rounded-[8px] cursor-pointer hover:border-[#0A0A0A]"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white text-xs text-[#525252] border border-[#E5E5E5] rounded-[8px] cursor-pointer hover:border-[#0A0A0A] transition-colors"
           >
-            <UploadCloud className="w-3.5 h-3.5" />
-            <span>{file ? file.name : label}</span>
+            <UploadCloud className="w-3.5 h-3.5 text-[#525252]" />
+            <span className="truncate max-w-[180px]">{file ? file.name : label}</span>
             <input
               type="file"
               className="hidden"
@@ -1061,8 +1075,12 @@ function UploadAndCompareInline(props: {
           onClick={() => {
             if (oldFile && newFile) props.onCompare(oldFile, newFile);
           }}
-          disabled={props.busy || !oldFile || !newFile}
-          className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0A0A0A] hover:bg-[#171717] disabled:opacity-50 text-white text-xs font-semibold rounded-[9999px] transition-colors cursor-pointer"
+          disabled={!canCompare}
+          className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-[9999px] transition-colors cursor-pointer shadow-xs ${
+            canCompare
+              ? 'bg-cyprus hover:bg-cyprus-deep text-white'
+              : 'bg-white text-[#A3A3A3] border border-[#E5E5E5] cursor-not-allowed'
+          }`}
         >
           <Play className="w-3.5 h-3.5" />
           <span>Compare now</span>
@@ -1071,3 +1089,4 @@ function UploadAndCompareInline(props: {
     </div>
   );
 }
+
