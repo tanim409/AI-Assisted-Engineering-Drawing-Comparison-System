@@ -240,32 +240,46 @@ def create_user(email: str, password: str) -> Dict[str, Any]:
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 
-def verify_google_id_token(id_token_str: str) -> Dict[str, Any]:
-    """Verify Google OAuth2 ID token via Google's tokeninfo API endpoint."""
+def verify_google_id_token(token_str: str) -> Dict[str, Any]:
+    """Verify Google OAuth2 ID token (or Access token) via Google API endpoints."""
     import requests
     try:
+        # First attempt ID token verification
         resp = requests.get(
-            f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token_str}",
+            f"https://oauth2.googleapis.com/tokeninfo?id_token={token_str}",
             timeout=10
         )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=401, detail="Invalid Google authentication token")
-        
-        info = resp.json()
-        # Verify audience if GOOGLE_CLIENT_ID is set
-        if GOOGLE_CLIENT_ID and info.get("aud") != GOOGLE_CLIENT_ID:
-            raise HTTPException(status_code=401, detail="Google token client ID mismatch")
-        
-        email = info.get("email")
-        google_sub = info.get("sub")
-        if not email or not google_sub:
-            raise HTTPException(status_code=401, detail="Google token missing required profile info")
-        
-        return {
-            "email": email,
-            "google_id": google_sub,
-            "email_verified": info.get("email_verified") == "true" or info.get("email_verified") is True,
-        }
+        if resp.status_code == 200:
+            info = resp.json()
+            if GOOGLE_CLIENT_ID and info.get("aud") != GOOGLE_CLIENT_ID:
+                raise HTTPException(status_code=401, detail="Google token client ID mismatch")
+            email = info.get("email")
+            google_sub = info.get("sub")
+            if email and google_sub:
+                return {
+                    "email": email,
+                    "google_id": google_sub,
+                    "email_verified": info.get("email_verified") == "true" or info.get("email_verified") is True,
+                }
+
+        # Fallback to access_token userinfo verification
+        resp_userinfo = requests.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {token_str}"},
+            timeout=10
+        )
+        if resp_userinfo.status_code == 200:
+            info = resp_userinfo.json()
+            email = info.get("email")
+            google_sub = info.get("sub")
+            if email and google_sub:
+                return {
+                    "email": email,
+                    "google_id": google_sub,
+                    "email_verified": info.get("email_verified") is True or info.get("email_verified") == "true",
+                }
+
+        raise HTTPException(status_code=401, detail="Invalid Google authentication token")
     except HTTPException:
         raise
     except Exception as e:

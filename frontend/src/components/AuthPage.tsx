@@ -36,21 +36,56 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab 
 
   const triggerGooglePrompt = () => {
     const googleClientId = ((import.meta as any).env?.VITE_GOOGLE_CLIENT_ID as string) || '';
-    if ((window as any).google?.accounts?.id) {
-      (window as any).google.accounts.id.initialize({
-        client_id: googleClientId,
-        callback: (response: any) => {
-          if (response.credential) {
-            handleGoogleLogin(response.credential);
-          }
-        },
-      });
-      (window as any).google.accounts.id.prompt();
-    } else {
-      const token = prompt("Google Sign-In: Please enter your Google ID token:");
-      if (token) {
-        handleGoogleLogin(token);
+    setLoginError('');
+
+    if (!(window as any).google?.accounts) {
+      setLoginError('Google Sign-In SDK is loading. Please try again in a moment.');
+      return;
+    }
+
+    try {
+      // 1. First try OAuth2 token client popup flow if available
+      if ((window as any).google.accounts.oauth2) {
+        const client = (window as any).google.accounts.oauth2.initTokenClient({
+          client_id: googleClientId,
+          scope: 'email profile openid',
+          callback: async (tokenResponse: any) => {
+            if (tokenResponse.access_token) {
+              // Exchange access_token for user info or id_token if needed
+              handleGoogleLogin(tokenResponse.id_token || tokenResponse.access_token);
+            } else if (tokenResponse.error) {
+              setLoginError(`Google OAuth error: ${tokenResponse.error}`);
+            }
+          },
+        });
+        client.requestAccessToken();
+        return;
       }
+
+      // 2. Fallback to GIS ID Token prompt flow
+      if ((window as any).google.accounts.id) {
+        (window as any).google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: (response: any) => {
+            if (response.credential) {
+              handleGoogleLogin(response.credential);
+            } else {
+              setLoginError('Google Sign-In was cancelled or failed.');
+            }
+          },
+        });
+        (window as any).google.accounts.id.prompt((notification: any) => {
+          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+            // Render explicit sign-in popup if One Tap prompt was suppressed
+            (window as any).google.accounts.id.renderButton(
+              document.getElementById('google-btn-container'),
+              { theme: 'outline', size: 'large', width: '100%' }
+            );
+          }
+        });
+      }
+    } catch (e: any) {
+      setLoginError(e.message || 'Could not launch Google Sign-In.');
     }
   };
 
