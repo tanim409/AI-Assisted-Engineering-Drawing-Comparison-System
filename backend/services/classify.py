@@ -13,18 +13,6 @@ from schemas.drawing_schema import BatchClassification
 
 # ── API clients ──────────────────────────────────────────────────────────────
 
-openrouter_client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
-    timeout=60.0,
-)
-
-google_client = OpenAI(
-    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-    api_key=os.getenv("GOOGLE_API_KEY", "dummy_test_key"),
-    timeout=180.0,  # Hard timeout — never block indefinitely
-)
-
 # Use the confirmed live model; override via GEMINI_MODEL env var if needed
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
@@ -236,55 +224,10 @@ def _classify_via_gemini(batch_regions: list, patch_images: list, start_index: i
             }
         except Exception as e:
             last_error = e
-            print(f"[classify] Gemini Direct API failed ({e}). Trying OpenRouter fallback...")
+            print(f"[classify] Gemini Direct API failed ({e}).")
 
-    # 2. Try OpenRouter Client as secondary VLM fallback
-    openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
-    if openrouter_key:
-        try:
-            openrouter_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash")
-            print(f"[classify] Calling OpenRouter VLM (model={openrouter_model}), {n} regions starting at {start_index}")
-            or_client = OpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=openrouter_key,
-                timeout=75.0,
-            )
-            completion = or_client.chat.completions.create(
-                model=openrouter_model,
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": user_content},
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=4096,
-            )
-            response_text = completion.choices[0].message.content
-            parsed = _extract_json(response_text)
-
-            results = {}
-            for res in parsed.get("results", []):
-                idx = res.get("region_index")
-                if idx is not None:
-                    results[idx] = {
-                        "region_index": idx,
-                        "category": res.get("category", "unclassified"),
-                        "description": res.get("description", "AI analysis completed."),
-                        "old_value": res.get("old_value") or "",
-                        "new_value": res.get("new_value") or "",
-                        "confidence": float(res.get("confidence", 0.85)),
-                        "source": openrouter_model,
-                    }
-            print(f"[classify] Successfully classified {len(results)} regions via OpenRouter VLM")
-            return {
-                "results": results,
-                "overall_summary": parsed.get("overall_summary", "Batch analyzed by OpenRouter VLM."),
-            }
-        except Exception as e:
-            last_error = e
-            print(f"[classify] OpenRouter VLM API failed ({e}).")
-
-    print(f"[classify] All VLM endpoints failed, using honest fallback")
-    return _fallback_batch(batch_regions, start_index, f"VLM API failed: {last_error}")
+    print(f"[classify] Gemini VLM API unavailable, using honest fallback")
+    return _fallback_batch(batch_regions, start_index, f"Gemini API failed: {last_error}")
 
 
 def _classify_single_batch(
