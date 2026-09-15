@@ -3,7 +3,8 @@
  * and a global 401 interceptor that clears stale tokens.
  */
 
-const AUTH_BASE = '/auth';
+const baseDomain = ((import.meta as any).env?.VITE_API_BASE_URL as string)?.replace(/\/api$/, '') || '';
+const AUTH_BASE = `${baseDomain}/auth`;
 const TOKEN_KEY = 'eng_draw_token';
 const USER_KEY  = 'eng_draw_user';
 

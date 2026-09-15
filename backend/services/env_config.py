@@ -12,11 +12,10 @@ def validate_environment():
 
     # 1. Critical AI Keys — At least one must be supplied
     google_key = os.getenv("GOOGLE_API_KEY", "").strip()
-    openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     
-    if (not google_key or google_key == "dummy_test_key") and not openrouter_key:
+    if (not google_key or google_key == "dummy_test_key"):
         warnings.append(
-            "Neither GOOGLE_API_KEY nor OPENROUTER_API_KEY is configured with a valid key. "
+            "GOOGLE_API_KEY is not configured with a valid key. "
             "AI VLM classifications will fall back to rule-based defaults."
         )
 

@@ -41,7 +41,23 @@ app.include_router(payment_router, prefix="/api", tags=["Payment"])
 
 import os
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from fastapi import Request
 
 frontend_dist = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 if os.path.exists(frontend_dist):
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="static")
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+    
+    # Catch-all route to serve React's index.html for SPA routing
+    @app.get("/{full_path:path}")
+    async def serve_spa(request: Request, full_path: str):
+        # Ignore API and Auth routes so they return proper 404s instead of the React app
+        if full_path.startswith("api/") or full_path.startswith("auth/"):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not Found")
+            
+        file_path = os.path.join(frontend_dist, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        
+        return FileResponse(os.path.join(frontend_dist, "index.html"))

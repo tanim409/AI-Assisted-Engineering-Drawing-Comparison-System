@@ -249,7 +249,7 @@ def llm_classify_batch(
     if not flagged_regions:
         return {"results": {}, "overall_summary": "No candidate changes were detected."}
 
-    model_name = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
     # Send all regions in 1 single batch request rather than splitting into tiny chunks of 4
     chunk_size = max(1, len(flagged_regions))
     all_results = {}
