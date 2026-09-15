@@ -1,3 +1,5 @@
+import services.config  # MUST be first to load .env variables
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from model.report_db import init_db

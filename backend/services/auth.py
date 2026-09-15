@@ -1,4 +1,5 @@
 import os
+import services.config # Loads env vars
 import secrets
 import smtplib
 from datetime import datetime, timedelta
