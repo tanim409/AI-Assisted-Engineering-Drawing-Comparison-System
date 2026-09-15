@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any
 from model.db import connect
 from model.report_db import resolve_report_id
 from services.change_reviews import attach_reviews_to_pages
-import pymysql
+from psycopg.errors import UniqueViolation
 
 
 def _compute_content_hash(old_bytes: bytes, new_bytes: bytes) -> str:
@@ -57,7 +57,7 @@ def reserve_report(old_bytes: bytes, new_bytes: bytes, owner_user_id: int) -> Op
                     VALUES (%s, %s, %s, 'pending', NOW())
                 """, (report_id, owner_user_id, content_hash))
                 return (report_id, "reserved")
-            except pymysql.IntegrityError:
+            except UniqueViolation:
                 return None
 
 
@@ -98,7 +98,7 @@ def init_report(report_id: str, total_pages: int, page_matching: dict, common_re
                 canonical_id = existing["report_id"]
                 if canonical_id != report_id:
                     cursor.execute(
-                        "INSERT INTO report_aliases (alias_id, report_id) VALUES (%s, %s) ON DUPLICATE KEY UPDATE report_id=VALUES(report_id)",
+                        "INSERT INTO report_aliases (alias_id, report_id) VALUES (%s, %s) ON CONFLICT (alias_id) DO UPDATE SET report_id = EXCLUDED.report_id",
                         (report_id, canonical_id)
                     )
                 report_id = canonical_id
@@ -108,12 +108,12 @@ def init_report(report_id: str, total_pages: int, page_matching: dict, common_re
                     report_id, owner_user_id, content_hash, status, total_pages, page_matching, common_render_dpi,
                     page_size_mismatch, page_size_mismatch_details, created_at
                 ) VALUES (%s, %s, %s, 'pending', %s, %s, %s, %s, %s, NOW())
-                ON DUPLICATE KEY UPDATE
-                    total_pages = VALUES(total_pages),
-                    page_matching = VALUES(page_matching),
-                    common_render_dpi = VALUES(common_render_dpi),
-                    page_size_mismatch = VALUES(page_size_mismatch),
-                    page_size_mismatch_details = VALUES(page_size_mismatch_details),
+                ON CONFLICT (report_id) DO UPDATE SET
+                    total_pages = EXCLUDED.total_pages,
+                    page_matching = EXCLUDED.page_matching,
+                    common_render_dpi = EXCLUDED.common_render_dpi,
+                    page_size_mismatch = EXCLUDED.page_size_mismatch,
+                    page_size_mismatch_details = EXCLUDED.page_size_mismatch_details,
                     status = 'pending'
             """, (
                 report_id,
@@ -251,19 +251,16 @@ def rename_report(old_report_id: str, new_report_id: str) -> None:
         return
     with connect() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
-            cursor.execute("UPDATE report_pages SET report_id = %s WHERE report_id = %s", (new_report_id, old_report_id))
-            cursor.execute("UPDATE change_reviews SET report_id = %s WHERE report_id = %s", (new_report_id, old_report_id))
-            cursor.execute("UPDATE report_aliases SET report_id = %s WHERE report_id = %s", (new_report_id, old_report_id))
+            # The foreign keys use ON UPDATE CASCADE, so updating the parent
+            # also updates report_pages, change_reviews, and aliases safely.
             cursor.execute("UPDATE reports SET report_id = %s WHERE report_id = %s", (new_report_id, old_report_id))
-            cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
 
 
 def copy_report_rows(source_id: str, target_id: str) -> None:
     with connect() as conn:
         with conn.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO report_aliases (alias_id, report_id) VALUES (%s, %s) ON DUPLICATE KEY UPDATE report_id=VALUES(report_id)",
+                "INSERT INTO report_aliases (alias_id, report_id) VALUES (%s, %s) ON CONFLICT (alias_id) DO UPDATE SET report_id = EXCLUDED.report_id",
                 (target_id, source_id)
             )
 
@@ -456,7 +453,6 @@ def delete_report(report_id: str, owner_user_id: Optional[int] = None) -> bool:
                 if not cursor.fetchone():
                     return False
 
-            cursor.execute("SET FOREIGN_KEY_CHECKS = 0;")
             cursor.execute("DELETE FROM change_reviews WHERE report_id = %s", (report_id,))
             cursor.execute("DELETE FROM report_pages WHERE report_id = %s", (report_id,))
             cursor.execute("DELETE FROM report_aliases WHERE alias_id = %s OR report_id = %s", (report_id, report_id))
@@ -466,7 +462,6 @@ def delete_report(report_id: str, owner_user_id: Optional[int] = None) -> bool:
             else:
                 cursor.execute("DELETE FROM reports WHERE report_id = %s", (report_id,))
             affected = cursor.rowcount
-            cursor.execute("SET FOREIGN_KEY_CHECKS = 1;")
             conn.commit()
     return affected > 0
 

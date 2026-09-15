@@ -29,17 +29,16 @@ def clean_db():
     init_versioning_db()
     with connect() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SET FOREIGN_KEY_CHECKS = 0;")
             for table in ["change_reviews", "report_pages", "report_aliases", "reports", "jobs", "comparisons", "revisions", "drawings"]:
                 try:
-                    cursor.execute(f"TRUNCATE TABLE {table};")
+                    cursor.execute(f"TRUNCATE TABLE {table} CASCADE;")
                 except Exception:
                     pass
-            cursor.execute("SET FOREIGN_KEY_CHECKS = 1;")
             # Ensure test user exists (auth override uses user_id=1)
             cursor.execute("""
-                INSERT IGNORE INTO users (user_id, email, password_hash, email_verified, is_active)
+                INSERT INTO users (user_id, email, password_hash, email_verified, is_active)
                 VALUES (1, 'test@example.com', '$2b$12$test_hash_placeholder', TRUE, TRUE)
+                ON CONFLICT (user_id) DO NOTHING
             """)
 
 

@@ -184,12 +184,19 @@ def compare_single_page(old_source, new_source, render_dpi=None, page_size_pts=N
         old_crop = crop_region(old_gray, region)
         new_crop = crop_region(comparison_new_image, region)
 
+        if old_crop is None or new_crop is None or getattr(old_crop, 'size', 0) == 0 or getattr(new_crop, 'size', 0) == 0:
+            continue
+
+        if old_crop.shape != new_crop.shape:
+            new_crop = cv2.resize(new_crop, (old_crop.shape[1], old_crop.shape[0]))
+
         visual_delta = cv2.absdiff(old_crop, new_crop)
-        visual_change = (
-            float(np.mean(visual_delta)) > VISUAL_CHANGE_THRESHOLD
-            or int(np.count_nonzero(visual_delta > 25)) > 12
-            or float(np.max(visual_delta)) > 50.0
-        )
+        area_px = max(1, region["w"] * region["h"])
+        mean_diff = float(np.mean(visual_delta)) if visual_delta is not None and visual_delta.size > 0 else 0.0
+        diff_pixel_fraction = float(np.count_nonzero(visual_delta > 25)) / area_px if visual_delta is not None and visual_delta.size > 0 else 0.0
+        
+        # Check average difference across the region PLUS fraction of region changed (filters out single noisy pixels)
+        visual_change = mean_diff > 4.0 and diff_pixel_fraction > 0.02
         if comparison_mode == "tiled" and not visual_change:
             continue
 
@@ -205,16 +212,20 @@ def compare_single_page(old_source, new_source, render_dpi=None, page_size_pts=N
         transformed = _transform_bbox_to_raw_new(region, H_matrix, new_gray.shape)
         bbox_percent_b = transformed["bbox_percent_new"] if transformed else bbox_percent_a
 
+        from services.diff import get_region_location_description
+        location_desc = get_region_location_description(region, old_gray.shape)
+
         regions_data.append({
             "bbox": {"x": region["x"], "y": region["y"], "w": region["w"], "h": region["h"]},
             "bbox_percent": bbox_percent_a,
             "bbox_percent_new": bbox_percent_b,
             "area_px": region["area"],
+            "location_description": location_desc,
             "old_text": "",
             "new_text": "",
             "ocr_confidence": {"old": 0.0, "new": 0.0},
-            "classification": {"category": "note_or_annotation_change", "confidence": 0.7},
-            "rule_based_classification": {"category": "note_or_annotation_change", "confidence": 0.7},
+            "classification": {"category": "unclassified", "confidence": 0.7},
+            "rule_based_classification": {"category": "unclassified", "confidence": 0.7},
         })
 
     # Extract side-by-side patch images with contextual padding for VLM
@@ -225,7 +236,7 @@ def compare_single_page(old_source, new_source, render_dpi=None, page_size_pts=N
     print(f"[pipeline] LLM classify returned {len(batch.get('results', {}))} results")
     for region_index, region_data in enumerate(regions_data):
         llm_result = batch["results"].get(region_index, {})
-        category = llm_result.get("category", "note_or_annotation_change")
+        category = llm_result.get("category", "unclassified")
         description = llm_result.get("description", "")
         
         region_data["classification"] = {

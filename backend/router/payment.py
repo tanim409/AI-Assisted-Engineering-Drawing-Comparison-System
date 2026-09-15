@@ -19,9 +19,9 @@ class BkashDetails(BaseModel):
     pin: str
 
 class PaymentRequest(BaseModel):
-    plan_id: str = Field(..., example="pro")
-    billing_cycle: str = Field("monthly", example="monthly") # 'monthly' | 'annual'
-    payment_method: str = Field(..., example="stripe") # 'stripe' | 'bkash'
+    plan_id: str = Field(..., json_schema_extra={"example": "pro"})
+    billing_cycle: str = Field("monthly", json_schema_extra={"example": "monthly"}) # 'monthly' | 'annual'
+    payment_method: str = Field(..., json_schema_extra={"example": "stripe"}) # 'stripe' | 'bkash'
     stripe_details: Optional[StripeDetails] = None
     bkash_details: Optional[BkashDetails] = None
 

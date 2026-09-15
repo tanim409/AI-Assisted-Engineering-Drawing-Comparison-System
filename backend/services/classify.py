@@ -123,13 +123,15 @@ def _fallback_batch(batch_regions: list, start_index: int, reason: str) -> dict:
         region_index = start_index + i
         results[region_index] = {
             "region_index": region_index,
-            "category": reg.get("classification", {}).get("category", "note_or_annotation_change"),
-            "description": "Rule-based change region detected.",
-            "confidence": 0.7,
+            "category": reg.get("classification", {}).get("category", "unclassified"),
+            "description": "AI analysis failed for this region — please retry",
+            "old_value": "",
+            "new_value": "",
+            "confidence": 0.0,
             "source": "fallback",
         }
     
-    clean_summary = "Automated visual comparison completed across detected drawing regions."
+    clean_summary = "Automated visual comparison completed (AI analysis unavailable for some or all regions)."
     if "429" in str(reason):
         print(f"[classify] Gemini Rate Limit (429) hit: {reason}")
     else:
@@ -142,28 +144,21 @@ def _fallback_batch(batch_regions: list, start_index: int, reason: str) -> dict:
 
 _SYSTEM_PROMPT = (
     "You are an engineering drawing QA assistant. "
-    "Respond ONLY with a valid JSON object — no markdown, no prose outside the JSON."
+    "Analyze the provided visual regions side-by-side (OLD on left, NEW on right) and report differences accurately."
 )
 
 _USER_PROMPT_TEMPLATE = (
-    "I am providing {n} side-by-side patch images. Each shows OLD (left) and NEW (right) "
+    "I am providing {n} side-by-side crop patch images. Each shows OLD (left) and NEW (right) "
     "sections of an engineering drawing revision.\n\n"
     "For each region classify the change into ONE of:\n"
     "  addition, removal, note_or_annotation_change, symbol_or_code_change, "
-    "dimension_change, no_change\n\n"
-    "Keep descriptions concise (1 sentence, max 15 words). If text/numbers changed, explicitly include 'old_value' and 'new_value'. You MUST return an entry in 'results' for EVERY region index provided.\n\n"
-    "Return ONLY a JSON object with this exact structure:\n"
-    '{{\n'
-    '  "results": [\n'
-    '    {{"region_index": <int>, "category": "<str>", "description": "<str>", "old_value": "<str>", "new_value": "<str>", "confidence": <float>}}\n'
-    '  ],\n'
-    '  "overall_summary": "<str>"\n'
-    '}}'
+    "dimension_change, no_change, unclassified, pending_review\n\n"
+    "Keep descriptions concise (1 sentence, max 15 words). If text/numbers changed, explicitly fill 'old_value' and 'new_value'. You MUST return an entry in 'results' for EVERY region index provided.\n"
 )
 
 
 def _classify_via_gemini(batch_regions: list, patch_images: list, start_index: int) -> dict:
-    """Send side-by-side crop patch images to Gemini via OpenAI-compatible endpoint.
+    """Send side-by-side crop patch images to Gemini via OpenAI-compatible endpoint with enforced structured output.
     
     Tries Google Direct API first. If Google API fails (e.g. 429 quota, auth error),
     falls back to OpenRouter API (google/gemini-2.5-flash).
@@ -174,8 +169,10 @@ def _classify_via_gemini(batch_regions: list, patch_images: list, start_index: i
     ]
     for idx, patch in enumerate(patch_images):
         region_idx = start_index + idx
+        reg_info = batch_regions[idx] if idx < len(batch_regions) else {}
+        loc_desc = reg_info.get("location_description", "drawing area")
         b64 = _b64_image(patch)
-        user_content.append({"type": "text", "text": f"Region {region_idx}:"})
+        user_content.append({"type": "text", "text": f"Region {region_idx} (located at {loc_desc}):"})
         user_content.append({
             "type": "image_url",
             "image_url": {"url": f"data:image/png;base64,{b64}"},
@@ -192,18 +189,32 @@ def _classify_via_gemini(batch_regions: list, patch_images: list, start_index: i
             client = OpenAI(
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                 api_key=google_key,
-                timeout=15.0,
+                timeout=75.0,
             )
-            completion = client.chat.completions.create(
-                model=gemini_model,
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": user_content},
-                ],
-                max_tokens=2048,
-            )
-            response_text = completion.choices[0].message.content
-            parsed = _extract_json(response_text)
+            # Enforce SDK structured outputs via parse / response_format
+            try:
+                completion = client.beta.chat.completions.parse(
+                    model=gemini_model,
+                    messages=[
+                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "user", "content": user_content},
+                    ],
+                    response_format=BatchClassification,
+                )
+                parsed_obj: BatchClassification = completion.choices[0].message.parsed
+                parsed = parsed_obj.model_dump()
+            except Exception as parse_err:
+                # Fallback to standard completion with response_format json_object if parse isn't supported by proxy
+                completion = client.chat.completions.create(
+                    model=gemini_model,
+                    messages=[
+                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "user", "content": user_content},
+                    ],
+                    response_format={"type": "json_object"},
+                    max_tokens=4096,
+                )
+                parsed = _extract_json(completion.choices[0].message.content)
 
             results = {}
             for res in parsed.get("results", []):
@@ -211,11 +222,11 @@ def _classify_via_gemini(batch_regions: list, patch_images: list, start_index: i
                 if idx is not None:
                     results[idx] = {
                         "region_index": idx,
-                        "category": res.get("category", "note_or_annotation_change"),
-                        "description": res.get("description", "No description provided"),
-                        "old_value": res.get("old_value", ""),
-                        "new_value": res.get("new_value", ""),
-                        "confidence": float(res.get("confidence", 0.8)),
+                        "category": res.get("category", "unclassified"),
+                        "description": res.get("description", "AI analysis completed."),
+                        "old_value": res.get("old_value") or "",
+                        "new_value": res.get("new_value") or "",
+                        "confidence": float(res.get("confidence", 0.85)),
                         "source": gemini_model,
                     }
             print(f"[classify] Successfully classified {len(results)} regions via Gemini Direct")
@@ -236,7 +247,7 @@ def _classify_via_gemini(batch_regions: list, patch_images: list, start_index: i
             or_client = OpenAI(
                 base_url="https://openrouter.ai/api/v1",
                 api_key=openrouter_key,
-                timeout=25.0,
+                timeout=75.0,
             )
             completion = or_client.chat.completions.create(
                 model=openrouter_model,
@@ -244,7 +255,8 @@ def _classify_via_gemini(batch_regions: list, patch_images: list, start_index: i
                     {"role": "system", "content": _SYSTEM_PROMPT},
                     {"role": "user", "content": user_content},
                 ],
-                max_tokens=1024,
+                response_format={"type": "json_object"},
+                max_tokens=4096,
             )
             response_text = completion.choices[0].message.content
             parsed = _extract_json(response_text)
@@ -255,11 +267,11 @@ def _classify_via_gemini(batch_regions: list, patch_images: list, start_index: i
                 if idx is not None:
                     results[idx] = {
                         "region_index": idx,
-                        "category": res.get("category", "note_or_annotation_change"),
-                        "description": res.get("description", "No description provided"),
-                        "old_value": res.get("old_value", ""),
-                        "new_value": res.get("new_value", ""),
-                        "confidence": float(res.get("confidence", 0.8)),
+                        "category": res.get("category", "unclassified"),
+                        "description": res.get("description", "AI analysis completed."),
+                        "old_value": res.get("old_value") or "",
+                        "new_value": res.get("new_value") or "",
+                        "confidence": float(res.get("confidence", 0.85)),
                         "source": openrouter_model,
                     }
             print(f"[classify] Successfully classified {len(results)} regions via OpenRouter VLM")
@@ -271,7 +283,7 @@ def _classify_via_gemini(batch_regions: list, patch_images: list, start_index: i
             last_error = e
             print(f"[classify] OpenRouter VLM API failed ({e}).")
 
-    print(f"[classify] All VLM endpoints failed, using rule-based fallback")
+    print(f"[classify] All VLM endpoints failed, using honest fallback")
     return _fallback_batch(batch_regions, start_index, f"VLM API failed: {last_error}")
 
 
@@ -295,7 +307,8 @@ def llm_classify_batch(
         return {"results": {}, "overall_summary": "No candidate changes were detected."}
 
     model_name = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash")
-    chunk_size = 4
+    # Send all regions in 1 single batch request rather than splitting into tiny chunks of 4
+    chunk_size = max(1, len(flagged_regions))
     all_results = {}
     summaries = []
 
@@ -319,18 +332,16 @@ def llm_classify_batch(
             if batch_data.get("overall_summary"):
                 summaries.append(batch_data["overall_summary"])
 
-        # Fill any gaps with rule-based fallback (no LLM result for that index)
+        # Fill any missing indices with honest fallback
         fallback = _fallback_batch(flagged_regions, 0, "Batch analysis completed.")
         for index, result in fallback["results"].items():
             all_results.setdefault(index, result)
 
         fallback_count = sum(1 for r in all_results.values() if r.get("source") == "fallback")
         if all_results and fallback_count >= len(all_results):
-            # Nothing came back from the model — say so explicitly instead of
-            # letting generic rule-based text pass as AI output downstream.
             final_summary = (
-                "VLM classification unavailable — all descriptions are rule-based. "
-                "Check the backend model API key/configuration and retry."
+                "AI analysis failed for these regions — please retry. "
+                "Check model API key/configuration."
             )
         else:
             final_summary = " ".join(summaries) if summaries else "Comparison completed."
@@ -340,7 +351,7 @@ def llm_classify_batch(
         print(f"[llm_classify_batch] falling back, error: {error}")
         failed = _fallback_batch(flagged_regions, 0, "VLM verification unavailable.")
         failed["overall_summary"] = (
-            "VLM classification unavailable — all descriptions are rule-based. "
-            "Check the backend model API key/configuration and retry."
+            "AI analysis failed for these regions — please retry. "
+            "Check model API key/configuration."
         )
         return failed

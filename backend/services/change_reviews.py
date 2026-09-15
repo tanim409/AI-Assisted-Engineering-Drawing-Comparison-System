@@ -1,4 +1,4 @@
-"""Persistence and read-time attachment of human change reviews in MySQL."""
+"""Persistence and read-time attachment of human change reviews in PostgreSQL."""
 import json
 import uuid
 from datetime import datetime, timezone
@@ -106,11 +106,11 @@ def upsert_change_review(
                 """INSERT INTO change_reviews
                        (review_id, report_id, page_number, change_index, status, note, reviewed_at, reviewer_id)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                   ON DUPLICATE KEY UPDATE
-                       status = VALUES(status),
-                       note = VALUES(note),
-                       reviewed_at = VALUES(reviewed_at),
-                       reviewer_id = VALUES(reviewer_id)""",
+                   ON CONFLICT (report_id, page_number, change_index) DO UPDATE SET
+                       status = EXCLUDED.status,
+                       note = EXCLUDED.note,
+                       reviewed_at = EXCLUDED.reviewed_at,
+                       reviewer_id = EXCLUDED.reviewer_id""",
                 (review_id, report_id, page_number, change_index, status, note, reviewed_at, reviewer_id),
             )
     return get_change_review(report_id, page_number, change_index, owner_user_id=owner_user_id)

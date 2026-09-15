@@ -1,6 +1,6 @@
 """Versioning data layer: drawings, revisions, comparisons.
 
-Stores drawings, revisions, comparisons, and drawing settings in MySQL.
+Stores drawings, revisions, comparisons, and drawing settings in PostgreSQL.
 """
 import uuid
 from typing import Any, Dict, List, Optional
@@ -8,7 +8,7 @@ from model.db import connect
 
 
 def init_versioning_db():
-    """Create versioning tables if they don't exist in MySQL."""
+    """Create versioning tables if they don't exist in PostgreSQL."""
     with connect() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
@@ -16,10 +16,9 @@ def init_versioning_db():
                     drawing_id    VARCHAR(255) PRIMARY KEY,
                     owner_user_id INT NOT NULL,
                     name          VARCHAR(255) NOT NULL,
-                    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    INDEX idx_drawings_owner (owner_user_id),
+                    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (owner_user_id) REFERENCES users(user_id) ON DELETE CASCADE
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                );
             """)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS revisions (
@@ -27,14 +26,13 @@ def init_versioning_db():
                     drawing_id        VARCHAR(255) NOT NULL,
                     sequence_number   INT NOT NULL,
                     revision_label    VARCHAR(255) NOT NULL,
-                    uploaded_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    uploaded_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     page_count        INT NOT NULL DEFAULT 1,
                     file_reference    TEXT NOT NULL,
                     original_filename VARCHAR(255),
-                    UNIQUE KEY uk_drawing_sequence (drawing_id, sequence_number),
-                    INDEX idx_revisions_drawing (drawing_id),
+                    CONSTRAINT uk_drawing_sequence UNIQUE (drawing_id, sequence_number),
                     FOREIGN KEY (drawing_id) REFERENCES drawings(drawing_id) ON DELETE CASCADE
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                );
             """)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS comparisons (
@@ -42,32 +40,34 @@ def init_versioning_db():
                     drawing_id      VARCHAR(255) NOT NULL,
                     old_revision_id VARCHAR(255) NOT NULL,
                     new_revision_id VARCHAR(255) NOT NULL,
-                    computed_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE KEY uk_comparison_pair (old_revision_id, new_revision_id),
-                    INDEX idx_comparisons_drawing (drawing_id),
+                    computed_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT uk_comparison_pair UNIQUE (old_revision_id, new_revision_id),
                     FOREIGN KEY (drawing_id) REFERENCES drawings(drawing_id) ON DELETE CASCADE,
                     FOREIGN KEY (old_revision_id) REFERENCES revisions(revision_id) ON DELETE CASCADE,
                     FOREIGN KEY (new_revision_id) REFERENCES revisions(revision_id) ON DELETE CASCADE
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                );
             """)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS drawing_settings (
                     drawing_id VARCHAR(255) PRIMARY KEY,
-                    min_ocr_confidence DOUBLE,
-                    visual_change_threshold DOUBLE,
-                    min_title_match_score DOUBLE,
-                    min_title_ocr_confidence DOUBLE,
+                    min_ocr_confidence DOUBLE PRECISION,
+                    visual_change_threshold DOUBLE PRECISION,
+                    min_title_match_score DOUBLE PRECISION,
+                    min_title_ocr_confidence DOUBLE PRECISION,
                     min_title_words INT,
-                    title_block_x_pct DOUBLE,
-                    title_block_y_pct DOUBLE,
-                    title_block_w_pct DOUBLE,
-                    title_block_h_pct DOUBLE,
-                    page_size_mismatch_threshold DOUBLE,
-                    target_physical_width_inches DOUBLE,
-                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    title_block_x_pct DOUBLE PRECISION,
+                    title_block_y_pct DOUBLE PRECISION,
+                    title_block_w_pct DOUBLE PRECISION,
+                    title_block_h_pct DOUBLE PRECISION,
+                    page_size_mismatch_threshold DOUBLE PRECISION,
+                    target_physical_width_inches DOUBLE PRECISION,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (drawing_id) REFERENCES drawings(drawing_id) ON DELETE CASCADE
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                );
             """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_drawings_owner ON drawings (owner_user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_revisions_drawing ON revisions (drawing_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_comparisons_drawing ON comparisons (drawing_id)")
 
 
 # ---------------------------------------------------------------- drawings
@@ -85,8 +85,6 @@ def _cascade_delete_comparisons(cursor, comp_ids: list[str]):
         alias_row = cursor.fetchone()
         if alias_row:
             source_report_ids.add(alias_row["report_id"])
-
-    cursor.execute("SET FOREIGN_KEY_CHECKS = 0;")
 
     # 1. Remove aliases where alias_id is one of the deleted comparisons
     for comp_id in comp_ids:
@@ -111,7 +109,6 @@ def _cascade_delete_comparisons(cursor, comp_ids: list[str]):
             cursor.execute("DELETE FROM report_pages WHERE report_id = %s", (src_id,))
             cursor.execute("DELETE FROM reports WHERE report_id = %s", (src_id,))
 
-    cursor.execute("SET FOREIGN_KEY_CHECKS = 1;")
 
 
 def create_drawing(owner_user_id: int, name: str) -> Dict[str, Any]:
@@ -227,12 +224,12 @@ def upsert_drawing_settings(drawing_id: str, values: Dict[str, Any], owner_user_
 
     col_names = ", ".join(columns)
     placeholders = ", ".join("%s" for _ in columns)
-    updates = ", ".join(f"{col} = VALUES({col})" for col in columns)
+    updates = ", ".join(f"{col} = EXCLUDED.{col}" for col in columns)
 
     sql = f"""
         INSERT INTO drawing_settings (drawing_id, {col_names}, updated_at)
         VALUES (%s, {placeholders}, NOW())
-        ON DUPLICATE KEY UPDATE {updates}, updated_at = NOW()
+        ON CONFLICT (drawing_id) DO UPDATE SET {updates}, updated_at = NOW()
     """
     params = [drawing_id] + [values[col] for col in columns]
 
@@ -345,7 +342,6 @@ def delete_revision(revision_id: str, owner_user_id: Optional[int] = None) -> bo
             cursor.execute("DELETE FROM revisions WHERE revision_id = %s", (revision_id,))
             affected = cursor.rowcount
 
-            cursor.execute("SET FOREIGN_KEY_CHECKS = 1;")
 
     # Clean up disk file
     if rev.get("file_reference"):
@@ -423,9 +419,10 @@ def create_comparison(drawing_id: str, old_revision_id: str, new_revision_id: st
     with connect() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
-                INSERT IGNORE INTO comparisons (
+                INSERT INTO comparisons (
                     comparison_id, drawing_id, old_revision_id, new_revision_id, computed_at
                 ) VALUES (%s, %s, %s, %s, NOW())
+                ON CONFLICT (old_revision_id, new_revision_id) DO NOTHING
             """, (comparison_id, drawing_id, old_revision_id, new_revision_id))
 
     existing = get_comparison_by_pair(old_revision_id, new_revision_id, owner_user_id=owner_user_id)

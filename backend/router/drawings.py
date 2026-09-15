@@ -153,7 +153,7 @@ async def get_reviews_summary(report_id: str, current_user: dict = Depends(auth.
 @router.get("/reports/{report_id}/annotated")
 async def export_annotated_report(
     report_id: str,
-    format: str = Query("png", regex="^(png|pdf)$"),
+    format: str = Query("png", pattern="^(png|pdf)$"),
     page: Optional[int] = Query(None, description="Page number (1-based) for PNG export; ignored for PDF"),
     current_user: dict = Depends(auth.get_current_user),
 ):

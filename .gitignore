@@ -44,3 +44,10 @@ frontend/.env.*.local
 **/scratch/
 **/scratch_*.py
 backend/test_summary.pdf
+
+# SSL / CA Certificates & Key Stores
+*.pem
+*.crt
+*.key
+ca.pem
+

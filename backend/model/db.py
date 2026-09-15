@@ -1,50 +1,54 @@
+"""PostgreSQL connection helpers."""
 import os
-import pymysql
-import pymysql.cursors
 from contextlib import contextmanager
+
+import psycopg
+from psycopg import sql
+from psycopg.rows import dict_row
 from dotenv import load_dotenv
 
 load_dotenv()
 
-MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
-MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
-MYSQL_USER = os.getenv("MYSQL_USER", "root")
-MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
-MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "engineering_drawings")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
+POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
+POSTGRES_DATABASE = os.getenv("POSTGRES_DATABASE", "engineering_drawings")
+
+
+def _connection_kwargs(database: str) -> dict:
+    return {
+        "host": POSTGRES_HOST,
+        "port": POSTGRES_PORT,
+        "user": POSTGRES_USER,
+        "password": POSTGRES_PASSWORD,
+        "dbname": database,
+    }
 
 
 def ensure_database_exists():
-    """Connect to MySQL server without selecting a DB and create the database if missing."""
-    conn = pymysql.connect(
-        host=MYSQL_HOST,
-        port=MYSQL_PORT,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD,
-        autocommit=True
-    )
+    """Create the configured PostgreSQL database when it is missing (local dev only)."""
+    if POSTGRES_DATABASE == "postgres":
+        return
     try:
-        with conn.cursor() as cursor:
-            cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{MYSQL_DATABASE}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")
-    finally:
-        conn.close()
+        with psycopg.connect(**_connection_kwargs("postgres"), autocommit=True) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (POSTGRES_DATABASE,))
+                if not cursor.fetchone():
+                    cursor.execute(sql.SQL("CREATE DATABASE {} ").format(sql.Identifier(POSTGRES_DATABASE)))
+    except Exception:
+        # Ignore database creation errors on managed cloud platforms like Supabase
+        pass
 
 
 def get_raw_connection():
     ensure_database_exists()
-    return pymysql.connect(
-        host=MYSQL_HOST,
-        port=MYSQL_PORT,
-        user=MYSQL_USER,
-        password=MYSQL_PASSWORD,
-        database=MYSQL_DATABASE,
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=False
-    )
+    return psycopg.connect(**_connection_kwargs(POSTGRES_DATABASE), row_factory=dict_row)
 
 
 @contextmanager
 def connect():
-    """Context manager yielding a MySQL connection and committing on success."""
+    """Yield a PostgreSQL connection and commit or roll back its transaction."""
     conn = get_raw_connection()
     try:
         yield conn

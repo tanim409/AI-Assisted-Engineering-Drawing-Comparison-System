@@ -169,21 +169,12 @@ def _compare_revisions(
 
         try:
             document_report = comparison_engine.run_comparison(
-                old_bytes, new_bytes, result_id=comparison_id, on_progress=on_progress, owner_user_id=owner_user_id
+                old_bytes, new_bytes, result_id=comparison["comparison_id"], on_progress=on_progress, owner_user_id=owner_user_id
             )
         except Exception as e:
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Comparison pipeline failed: {e}")
-            # Drawing might have been deleted during the long-running comparison.
-            # Return the report data even if the comparison record couldn't be created.
-            traceback.print_exc()
-            comparison = {
-                "comparison_id": comparison_id,
-                "drawing_id": drawing_id,
-                "old_revision_id": old_rev["revision_id"],
-                "new_revision_id": new_rev["revision_id"],
-                "computed_at": str(document_report.get("created_at", "")),
-            }
+
         full = get_full_report(comparison["comparison_id"], owner_user_id=owner_user_id)
         return _comparison_response(comparison, full, was_cached=False)
 

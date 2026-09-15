@@ -39,16 +39,33 @@ def extract_change_regions(mask, min_area=40):
 
 
 def crop_region(img: np.ndarray, region: dict) -> np.ndarray:
+    if img is None:
+        return np.zeros((0, 0), dtype=np.uint8)
     x, y, w, h = region["x"], region["y"], region["w"], region["h"]
     H, W = img.shape[:2]
+    x1, y1 = max(0, x), max(0, y)
     x2, y2 = min(W, x + w), min(H, y + h)
-    return img[y:y2, x:x2]
+    return img[y1:y2, x1:x2]
 
 
-def extract_paired_crops(old_gray: np.ndarray, new_gray_aligned: np.ndarray, regions: list, pad_pct: float = 0.18) -> list:
+def get_region_location_description(region: dict, image_shape: tuple) -> str:
+    """Return human-readable spatial location description based on region bbox center (e.g. 'top-left area')."""
+    H, W = image_shape[:2]
+    cx = (region.get("x", 0) + region.get("w", 0) / 2.0) / max(1, W)
+    cy = (region.get("y", 0) + region.get("h", 0) / 2.0) / max(1, H)
+
+    row_desc = "top" if cy < 0.33 else ("bottom" if cy > 0.66 else "middle")
+    col_desc = "left" if cx < 0.33 else ("right" if cx > 0.66 else "center")
+
+    if row_desc == "middle" and col_desc == "center":
+        return "center area of the drawing"
+    return f"{row_desc}-{col_desc} area of the drawing"
+
+
+def extract_paired_crops(old_gray: np.ndarray, new_gray_aligned: np.ndarray, regions: list, pad_pct: float = 0.35) -> list:
     """
     For each region in regions, extract crop from old_gray and aligned new_gray_aligned
-    with contextual padding (15-20%), and stitch them side-by-side [OLD (left) | divider | NEW (right)].
+    with generous contextual padding (30-40%), and stitch them side-by-side [OLD (left) | divider | NEW (right)].
     Returns list of stitched image patches (np.ndarray).
     """
     H, W = old_gray.shape[:2]
@@ -56,9 +73,10 @@ def extract_paired_crops(old_gray: np.ndarray, new_gray_aligned: np.ndarray, reg
     divider_width = 4
     
     for reg in regions:
-        x, y, w, h = reg["x"], reg["y"], reg["w"], reg["h"]
-        pad_x = int(w * pad_pct)
-        pad_y = int(h * pad_pct)
+        bbox = reg.get("bbox", reg)
+        x, y, w, h = bbox["x"], bbox["y"], bbox["w"], bbox["h"]
+        pad_x = max(15, int(w * pad_pct))
+        pad_y = max(15, int(h * pad_pct))
         
         x1 = max(0, x - pad_x)
         y1 = max(0, y - pad_y)

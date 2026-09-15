@@ -5,8 +5,19 @@ from pydantic import Field,BaseModel
 
 class RegionResult(BaseModel):
     region_index: int = Field(description="Input region index this result corresponds to")
-    category: Literal["no_change", "addition", "note_or_annotation_change","symbol_or_code_change", "removal", "dimension_change"] = Field(description="Confirmed or corrected type of change")
+    category: Literal[
+        "unclassified",
+        "pending_review",
+        "no_change",
+        "addition",
+        "note_or_annotation_change",
+        "symbol_or_code_change",
+        "removal",
+        "dimension_change"
+    ] = Field(description="Confirmed or corrected type of change")
     description: str = Field(description="Short human-readable change description using visible values")
+    old_value: str | None = Field(default=None, description="Extracted prior value or text from OLD drawing, if applicable")
+    new_value: str | None = Field(default=None, description="Extracted new value or text from NEW drawing, if applicable")
     confidence: float = Field(description="Confidence from 0 to 1", ge=0, le=1)
 
 

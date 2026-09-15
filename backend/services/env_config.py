@@ -36,16 +36,16 @@ def validate_environment():
         errors.append("JWT_SECRET_KEY is using an insecure default value in a production environment.")
 
     # 3. Database Credentials
-    db_host = os.getenv("MYSQL_HOST", "").strip()
-    db_user = os.getenv("MYSQL_USER", "").strip()
-    db_name = os.getenv("MYSQL_DATABASE", "").strip()
+    db_host = os.getenv("POSTGRES_HOST", "").strip()
+    db_user = os.getenv("POSTGRES_USER", "").strip()
+    db_name = os.getenv("POSTGRES_DATABASE", "").strip()
     
     if not db_host:
-        errors.append("MYSQL_HOST environment variable is missing.")
+        errors.append("POSTGRES_HOST environment variable is missing.")
     if not db_user:
-        errors.append("MYSQL_USER environment variable is missing.")
+        errors.append("POSTGRES_USER environment variable is missing.")
     if not db_name:
-        errors.append("MYSQL_DATABASE environment variable is missing.")
+        errors.append("POSTGRES_DATABASE environment variable is missing.")
 
     # Print warnings if any
     for w in warnings:
