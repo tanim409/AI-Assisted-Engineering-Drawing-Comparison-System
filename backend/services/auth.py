@@ -259,56 +259,31 @@ def create_user(email: str, password: str) -> Dict[str, Any]:
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 
+def _fetch_google_json(url: str, headers: Optional[Dict[str, str]] = None) -> Optional[Dict[str, Any]]:
+    import urllib.request
+    import json
+    try:
+        req = urllib.request.Request(url, headers=headers or {})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status == 200:
+                data = resp.read().decode('utf-8')
+                return json.loads(data)
+    except Exception as e:
+        print(f"[Google Auth HTTP Error] {url}: {e}")
+    return None
+
+
 def verify_google_id_token(token_str: str) -> Dict[str, Any]:
     """Verify Google OAuth2 ID token or Access token via Google API endpoints."""
-    import requests
     google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 
     # 1. Try ID token verification
-    try:
-        resp = requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={token_str}", timeout=10)
-        if resp.status_code == 200:
-            info = resp.json()
-            aud = info.get("aud")
-            if google_client_id and aud and aud != google_client_id:
-                print(f"[Google Auth] ID Token client mismatch. aud={aud}, expected={google_client_id}")
-            else:
-                email = info.get("email")
-                sub = info.get("sub")
-                if email and sub:
-                    return {
-                        "email": email,
-                        "google_id": sub,
-                        "email_verified": str(info.get("email_verified")).lower() == "true",
-                    }
-    except Exception as e:
-        print(f"[Google Auth] ID token verification check failed: {e}")
-
-    # 2. Try Access token verification via tokeninfo
-    try:
-        resp = requests.get(f"https://oauth2.googleapis.com/tokeninfo?access_token={token_str}", timeout=10)
-        if resp.status_code == 200:
-            info = resp.json()
-            email = info.get("email")
-            sub = info.get("sub") or info.get("user_id")
-            if email:
-                return {
-                    "email": email,
-                    "google_id": sub or email,
-                    "email_verified": True,
-                }
-    except Exception as e:
-        print(f"[Google Auth] Access token check failed: {e}")
-
-    # 3. Fallback to UserInfo endpoint
-    try:
-        resp_userinfo = requests.get(
-            "https://www.googleapis.com/oauth2/v3/userinfo",
-            headers={"Authorization": f"Bearer {token_str}"},
-            timeout=10
-        )
-        if resp_userinfo.status_code == 200:
-            info = resp_userinfo.json()
+    info = _fetch_google_json(f"https://oauth2.googleapis.com/tokeninfo?id_token={token_str}")
+    if info and info.get("email"):
+        aud = info.get("aud")
+        if google_client_id and aud and aud != google_client_id:
+            print(f"[Google Auth] ID Token client mismatch. aud={aud}, expected={google_client_id}")
+        else:
             email = info.get("email")
             sub = info.get("sub")
             if email and sub:
@@ -317,8 +292,29 @@ def verify_google_id_token(token_str: str) -> Dict[str, Any]:
                     "google_id": sub,
                     "email_verified": str(info.get("email_verified")).lower() == "true",
                 }
-    except Exception as e:
-        print(f"[Google Auth] Userinfo check failed: {e}")
+
+    # 2. Try Access token verification via tokeninfo
+    info = _fetch_google_json(f"https://oauth2.googleapis.com/tokeninfo?access_token={token_str}")
+    if info and info.get("email"):
+        email = info.get("email")
+        sub = info.get("sub") or info.get("user_id")
+        return {
+            "email": email,
+            "google_id": sub or email,
+            "email_verified": True,
+        }
+
+    # 3. Fallback to UserInfo endpoint
+    info = _fetch_google_json("https://www.googleapis.com/oauth2/v3/userinfo", headers={"Authorization": f"Bearer {token_str}"})
+    if info and info.get("email"):
+        email = info.get("email")
+        sub = info.get("sub")
+        if email and sub:
+            return {
+                "email": email,
+                "google_id": sub,
+                "email_verified": str(info.get("email_verified")).lower() == "true",
+            }
 
     raise HTTPException(status_code=400, detail="Invalid or expired Google authentication token.")
 

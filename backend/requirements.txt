@@ -18,3 +18,4 @@ pyjwt
 passlib[bcrypt]
 email-validator
 cryptography
+requests
