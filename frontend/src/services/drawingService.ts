@@ -246,7 +246,8 @@ export async function uploadAndCompare(
   newFile: File,
   name?: string,
   oldRevisionLabel?: string,
-  newRevisionLabel?: string
+  newRevisionLabel?: string,
+  options?: DrawingCompareOptions
 ): Promise<{ result: ComparisonResult; drawing: DrawingSummary; revisions: RevisionInfo[] }> {
   const form = new FormData();
   form.append('old_drawing', oldFile, oldFile.name);
@@ -260,6 +261,24 @@ export async function uploadAndCompare(
     method: 'POST',
     body: form,
   });
+
+  if (res.status === 202) {
+    const queued = await res.json().catch(() => null);
+    const jobId = queued?.job_id as string | undefined;
+    if (!jobId) throw new Error('Comparison was accepted but no job_id was returned.');
+    const finished = await pollJobStatus(jobId, {
+      onProgress: options?.onJobProgress,
+      abortSignal: options?.abortSignal,
+    });
+    const payload = finished.result as Record<string, any>;
+    const result = mapBackendResult(payload, oldFile, newFile, oldUrl, newUrl);
+    return {
+      result,
+      drawing: queued.drawing as DrawingSummary,
+      revisions: (queued.revisions ?? []) as RevisionInfo[],
+    };
+  }
+
   const data = await res.json().catch(() => null);
   checkOk(res, data, 'Could not upload and compare.');
   const result = mapBackendResult(data as Record<string, any>, oldFile, newFile, oldUrl, newUrl);

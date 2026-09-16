@@ -69,7 +69,7 @@ export async function authFetch(
 
 // ─── Auth API calls ───────────────────────────────────────────────────────────
 
-export async function apiRegister(email: string, password: string): Promise<{ verification_token?: string }> {
+export async function apiRegister(email: string, password: string): Promise<AuthUser> {
   const res = await fetch(`${AUTH_BASE}/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -77,7 +77,9 @@ export async function apiRegister(email: string, password: string): Promise<{ ve
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.detail || 'Registration failed');
-  return data;
+  setToken(data.access_token);
+  storeUser(data.user);
+  return data.user as AuthUser;
 }
 
 export async function apiLogin(email: string, password: string): Promise<AuthUser> {
@@ -112,28 +114,6 @@ export async function apiGetMe(): Promise<AuthUser> {
   if (!res.ok) throw new Error(data?.detail || 'Session expired');
   storeUser(data);
   return data as AuthUser;
-}
-
-export async function apiVerifyEmail(token: string): Promise<void> {
-  const res = await fetch(`${AUTH_BASE}/verify-email`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.detail || 'Verification failed');
-}
-
-export async function apiResendVerification(email: string): Promise<void> {
-  const res = await fetch(`${AUTH_BASE}/resend-verification`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
-  });
-  if (!res.ok) {
-    const d = await res.json().catch(() => ({}));
-    throw new Error(d?.detail || 'Could not resend verification email');
-  }
 }
 
 export async function apiRequestPasswordReset(email: string): Promise<void> {

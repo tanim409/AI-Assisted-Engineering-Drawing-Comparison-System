@@ -96,54 +96,16 @@ def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
     return _original_getaddrinfo(host, port, family, type, proto, flags)
 
 
-def _send_via_resend(api_key: str, to_email: str, subject: str, body_text: str, body_html: Optional[str], raise_on_error: bool) -> bool:
+def _send_via_brevo(api_key: str, to_email: str, subject: str, body_text: str, body_html: Optional[str], raise_on_error: bool) -> bool:
     import urllib.request
     import urllib.error
     import json
-
-    resend_from = os.getenv("RESEND_FROM", "").strip()
-    if not resend_from:
-        resend_from = "Engineering Review <onboarding@resend.dev>"
-
-    payload = {
-        "from": resend_from,
-        "to": [to_email],
-        "subject": subject,
-        "text": body_text,
-    }
-    if body_html:
-        payload["html"] = body_html
-
-    try:
-        req = urllib.request.Request(
-            "https://api.resend.com/emails",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            if resp.status in (200, 201):
-                print(f"[Resend API Success] Sent email to {to_email}")
-                return True
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="ignore")
-        print(f"[Resend API Error {e.code}]: {err_body}")
-        if raise_on_error:
-            raise RuntimeError(f"Resend API Error ({e.code}): {err_body}")
-    except Exception as e:
-        print(f"[Resend API Error]: {e}")
-        if raise_on_error:
-            raise RuntimeError(f"Resend API email error: {e}")
-    return False
-
-
-def _send_via_brevo(api_key: str, to_email: str, subject: str, body_text: str, body_html: Optional[str], raise_on_error: bool) -> bool:
-    import urllib.request
-    import json
     sender_email = os.getenv("SMTP_FROM", os.getenv("SMTP_USER", "")).strip() or "no-reply@engineeringdrawings.com"
+    if "<" in sender_email:
+        import re
+        m = re.search(r'<(.*?)>', sender_email)
+        sender_email = m.group(1) if m else sender_email
+
     payload = {
         "sender": {"email": sender_email, "name": "Engineering Review"},
         "to": [{"email": to_email}],
@@ -159,6 +121,7 @@ def _send_via_brevo(api_key: str, to_email: str, subject: str, body_text: str, b
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "api-key": api_key,
+                "accept": "application/json",
                 "Content-Type": "application/json"
             },
             method="POST"
@@ -167,6 +130,11 @@ def _send_via_brevo(api_key: str, to_email: str, subject: str, body_text: str, b
             if resp.status in (200, 201):
                 print(f"[Brevo API Success] Sent email to {to_email}")
                 return True
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="ignore")
+        print(f"[Brevo API Error {e.code}]: {err_body}")
+        if raise_on_error:
+            raise RuntimeError(f"Brevo API Error ({e.code}): {err_body}")
     except Exception as e:
         print(f"[Brevo API Error]: {e}")
         if raise_on_error:
@@ -175,19 +143,13 @@ def _send_via_brevo(api_key: str, to_email: str, subject: str, body_text: str, b
 
 
 def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[str] = None, raise_on_error: bool = False):
-    # 1. Try Resend HTTP API if key is configured (HTTPS Port 443 — NEVER blocked by Render)
-    resend_key = os.getenv("RESEND_API_KEY", "").strip()
-    if resend_key:
-        print(f"\n--- [EMAIL ATTEMPT] via Resend API to: {to_email} ---")
-        return _send_via_resend(resend_key, to_email, subject, body_text, body_html, raise_on_error)
-
-    # 2. Try Brevo HTTP API if key is configured (HTTPS Port 443 — NEVER blocked by Render)
+    # 1. Try Brevo HTTP API if key is configured (HTTPS Port 443 — NEVER blocked by Render)
     brevo_key = os.getenv("BREVO_API_KEY", "").strip()
     if brevo_key:
         print(f"\n--- [EMAIL ATTEMPT] via Brevo API to: {to_email} ---")
         return _send_via_brevo(brevo_key, to_email, subject, body_text, body_html, raise_on_error)
 
-    # 3. Fallback to standard SMTP
+    # 2. Fallback to standard SMTP
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
     smtp_port = int(os.getenv("SMTP_PORT", "465"))
     smtp_user = os.getenv("SMTP_USER", "").strip()
@@ -360,6 +322,18 @@ def send_password_reset_email(to_email: str, token: str):
 
 # ---------------------------------------------------------------- database user queries
 
+import re
+
+EMAIL_DOMAIN_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+
+def validate_email_format(email: str) -> None:
+    if not email or not EMAIL_DOMAIN_REGEX.match(email.strip()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please enter a valid email address with a complete domain (e.g. user@gmail.com).",
+        )
+
+
 def normalize_email(email: str) -> str:
     return email.strip().lower()
 
@@ -383,16 +357,20 @@ def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
 
 def create_user(email: str, password: str) -> Dict[str, Any]:
     clean_email = normalize_email(email)
+    validate_email_format(clean_email)
     hashed = hash_password(password)
     with connect() as conn:
         with conn.cursor() as cursor:
             cursor.execute("SELECT user_id FROM users WHERE LOWER(email) = LOWER(%s)", (clean_email,))
             if cursor.fetchone():
-                raise HTTPException(status_code=400, detail="User with this email already exists")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="An account with this email address already exists. Please log in instead.",
+                )
 
             cursor.execute("""
                 INSERT INTO users (email, password_hash, email_verified, is_active)
-                VALUES (%s, %s, FALSE, TRUE)
+                VALUES (%s, %s, TRUE, TRUE)
                 RETURNING user_id
             """, (clean_email, hashed))
             user_id = cursor.fetchone()["user_id"]

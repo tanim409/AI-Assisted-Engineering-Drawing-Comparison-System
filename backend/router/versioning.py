@@ -198,6 +198,7 @@ def _comparison_response(comparison: dict, full_report: dict | None, was_cached:
 
 @router.post("/drawings/upload-and-compare", tags=["Drawings"])
 async def upload_and_compare(
+    background_tasks: BackgroundTasks,
     old_drawing: UploadFile = File(...),
     new_drawing: UploadFile = File(...),
     name: str | None = Form(default=None),
@@ -214,10 +215,26 @@ async def upload_and_compare(
     old_rev = await _register_revision(drawing["drawing_id"], old_drawing, old_revision_label, user_id)
     new_rev = await _register_revision(drawing["drawing_id"], new_drawing, new_revision_label, user_id)
 
-    result = _compare_revisions(drawing["drawing_id"], old_rev, new_rev, user_id)
-    result["drawing"] = {"drawing_id": drawing["drawing_id"], "name": drawing["name"], "created_at": str(drawing["created_at"])}
-    result["revisions"] = [_revision_response(old_rev), _revision_response(new_rev)]
-    return JSONResponse(content=result)
+    drawing_resp = {"drawing_id": drawing["drawing_id"], "name": drawing["name"], "created_at": str(drawing["created_at"])}
+    revisions_resp = [_revision_response(old_rev), _revision_response(new_rev)]
+
+    existing = versioning_db.get_comparison_by_pair(old_rev["revision_id"], new_rev["revision_id"], owner_user_id=user_id)
+    if existing and not _has_failed_pages(existing["comparison_id"], owner_user_id=user_id):
+        full = get_full_report(existing["comparison_id"], owner_user_id=user_id)
+        if full is not None:
+            result = _comparison_response(existing, full, was_cached=True)
+            result["drawing"] = drawing_resp
+            result["revisions"] = revisions_resp
+            return JSONResponse(content=result)
+
+    job = jobs.create_job(jobs.JOB_TYPE_DRAWING, owner_user_id=user_id, drawing_id=drawing["drawing_id"])
+    background_tasks.add_task(_run_drawing_compare_job, job["job_id"], drawing["drawing_id"], old_rev, new_rev, user_id)
+    return JSONResponse(status_code=202, content={
+        "job_id": job["job_id"],
+        "status": "pending",
+        "drawing": drawing_resp,
+        "revisions": revisions_resp,
+    })
 
 
 # ------------------------------------------------------- explicit management

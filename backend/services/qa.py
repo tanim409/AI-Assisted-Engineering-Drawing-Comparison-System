@@ -4,10 +4,15 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 from schemas.drawing_schema import QAResponse
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
-)
+def get_qa_client():
+    google_key = os.getenv("GOOGLE_API_KEY", "").strip()
+    if google_key and google_key != "dummy_test_key":
+        return OpenAI(
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key=google_key,
+            timeout=45.0,
+        )
+    return None
 
 def answer_question(changes: list, question: str) -> dict:
     if not changes:
@@ -37,9 +42,18 @@ def answer_question(changes: list, question: str) -> dict:
 
     Question: {question}"""
 
+    client = get_qa_client()
+    if not client:
+        return {
+            "answer": "AI Q&A is currently unavailable (no API key configured).",
+            "referenced_change_indices": [],
+        }
+
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
     try:
         response = client.beta.chat.completions.parse(
-            model="google/gemini-2.5-flash",
+            model=gemini_model,
             max_tokens=500,
             messages=[{"role": "user", "content": prompt}],
             response_format=QAResponse,

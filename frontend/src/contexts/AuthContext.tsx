@@ -18,6 +18,7 @@ interface AuthContextValue {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -48,7 +49,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
+    const { apiLogin } = await import('../services/authService');
     const u = await apiLogin(email, password);
+    setUser(u);
+  }, []);
+
+  const register = useCallback(async (email: string, password: string) => {
+    const { apiRegister } = await import('../services/authService');
+    const u = await apiRegister(email, password);
     setUser(u);
   }, []);
 
@@ -69,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, isAuthenticated: !!user, login, loginWithGoogle, logout, refreshUser, setUser }}
+      value={{ user, isLoading, isAuthenticated: !!user, login, register, loginWithGoogle, logout, refreshUser, setUser }}
     >
       {children}
     </AuthContext.Provider>

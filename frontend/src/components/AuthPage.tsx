@@ -17,7 +17,7 @@ interface AuthPageProps {
 }
 
 export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab = 'login', onClose }) => {
-  const { login, loginWithGoogle } = useAuth();
+  const { login, register, loginWithGoogle } = useAuth();
   const [tab, setTab] = useState<'login' | 'register'>(initialTab);
   const [googleLoading, setGoogleLoading] = useState(false);
 
@@ -51,7 +51,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab 
           scope: 'email profile openid',
           callback: async (tokenResponse: any) => {
             if (tokenResponse.access_token) {
-              // Exchange access_token for user info or id_token if needed
               handleGoogleLogin(tokenResponse.id_token || tokenResponse.access_token);
             } else if (tokenResponse.error) {
               setLoginError(`Google OAuth error: ${tokenResponse.error}`);
@@ -76,7 +75,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab 
         });
         (window as any).google.accounts.id.prompt((notification: any) => {
           if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-            // Render explicit sign-in popup if One Tap prompt was suppressed
             (window as any).google.accounts.id.renderButton(
               document.getElementById('google-btn-container'),
               { theme: 'outline', size: 'large', width: '100%' }
@@ -93,13 +91,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab 
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
-  const [isUnverifiedError, setIsUnverifiedError] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [showLoginPass, setShowLoginPass] = useState(false);
-
-  // Resend from login form
-  const [loginResendLoading, setLoginResendLoading] = useState(false);
-  const [loginResendSuccess, setLoginResendSuccess] = useState(false);
 
   // ── Register state ───────────────────────────────────────────────────────
   const [regEmail, setRegEmail] = useState('');
@@ -109,51 +102,33 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab 
   const [regLoading, setRegLoading] = useState(false);
   const [showRegPass, setShowRegPass] = useState(false);
 
-  // Registered success screen (Check Email screen)
-  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
-  const [checkScreenResendLoading, setCheckScreenResendLoading] = useState(false);
-  const [checkScreenResendSuccess, setCheckScreenResendSuccess] = useState(false);
-
   // ── Forgot Password view ─────────────────────────────────────────────────
   const [showForgot, setShowForgot] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
-    setIsUnverifiedError(false);
-    setLoginResendSuccess(false);
     setLoginLoading(true);
     try {
       await login(loginEmail, loginPassword);
       onAuthenticated();
     } catch (err: any) {
-      const msg = err.message || 'Login failed';
-      setLoginError(msg);
-      if (msg.toLowerCase().includes('verify your email')) {
-        setIsUnverifiedError(true);
-      }
+      setLoginError(err.message || 'Login failed');
     } finally {
       setLoginLoading(false);
     }
   };
 
-  const handleLoginResendVerification = async () => {
-    if (!loginEmail) return;
-    setLoginResendLoading(true);
-    setLoginResendSuccess(false);
-    try {
-      await apiResendVerification(loginEmail);
-      setLoginResendSuccess(true);
-    } catch (err: any) {
-      setLoginError(err?.message || 'Could not send verification email.');
-    } finally {
-      setLoginResendLoading(false);
-    }
-  };
+  const EMAIL_DOMAIN_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegError('');
+
+    if (!EMAIL_DOMAIN_REGEX.test(regEmail.trim())) {
+      setRegError('Please enter a valid email address with a complete domain (e.g. user@gmail.com).');
+      return;
+    }
     if (regPassword !== regConfirm) {
       setRegError('Passwords do not match');
       return;
@@ -164,26 +139,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab 
     }
     setRegLoading(true);
     try {
-      await apiRegister(regEmail, regPassword);
-      setRegisteredEmail(regEmail);
+      await register(regEmail, regPassword);
+      onAuthenticated();
     } catch (err: any) {
       setRegError(err.message || 'Registration failed');
     } finally {
       setRegLoading(false);
-    }
-  };
-
-  const handleCheckScreenResend = async () => {
-    if (!registeredEmail) return;
-    setCheckScreenResendLoading(true);
-    setCheckScreenResendSuccess(false);
-    try {
-      await apiResendVerification(registeredEmail);
-      setCheckScreenResendSuccess(true);
-    } catch {
-      // Best effort
-    } finally {
-      setCheckScreenResendLoading(false);
     }
   };
 
@@ -199,76 +160,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab 
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#0A0A0A] via-[#111111] to-[#1a1a2e] flex items-center justify-center px-4">
         {forgotPanel}
-      </div>
-    );
-  }
-
-  // ── "Check Your Email" Post-Registration Screen ──
-  if (registeredEmail) {
-    const checkEmailCard = (
-      <div className="relative w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-white/5 border border-white/10 mb-4 backdrop-blur-sm">
-            <span className="text-white text-2xl font-bold">Δ</span>
-          </div>
-          <h1 className="text-white text-2xl font-bold tracking-tight">Engineering Review</h1>
-        </div>
-
-        <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-md p-8 shadow-2xl space-y-6 text-center">
-          <div className="w-14 h-14 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mx-auto">
-            <Mail className="w-7 h-7" />
-          </div>
-
-          <div className="space-y-2">
-            <h2 className="text-white text-xl font-bold tracking-tight">Check your email</h2>
-            <p className="text-white/60 text-sm leading-relaxed">
-              We've sent a verification link to <span className="text-white font-medium">{registeredEmail}</span>.
-              Please click the link in your email to verify your account and log in.
-            </p>
-          </div>
-
-          {checkScreenResendSuccess ? (
-            <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-400 flex items-center justify-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Verification email sent! Check your inbox.</span>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={handleCheckScreenResend}
-              disabled={checkScreenResendLoading}
-              className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 bg-white/10 hover:bg-white/15 border border-white/15 text-white text-xs font-semibold rounded-xl transition-all cursor-pointer"
-            >
-              {checkScreenResendLoading ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="w-3.5 h-3.5" />
-              )}
-              <span>Resend Verification Email</span>
-            </button>
-          )}
-
-          <div className="pt-4 border-t border-white/10">
-            <button
-              type="button"
-              onClick={() => {
-                setRegisteredEmail(null);
-                setTab('login');
-                setLoginEmail(registeredEmail);
-              }}
-              className="text-white/50 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
-            >
-              ← Back to Sign In
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-
-    if (isModal) return checkEmailCard;
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0A] via-[#111111] to-[#1a1a2e] flex items-center justify-center px-4">
-        {checkEmailCard}
       </div>
     );
   }
@@ -394,40 +285,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab 
               </div>
 
               {loginError && (
-                <div className={`text-sm rounded-xl p-4 border space-y-3 ${
-                  isUnverifiedError
-                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                    : 'bg-red-500/10 border-red-500/30 text-red-400'
-                }`}>
-                  <div className="flex items-start gap-2.5">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span className="flex-1">{loginError}</span>
-                  </div>
-
-                  {isUnverifiedError && (
-                    <div className="pt-2 border-t border-amber-500/20">
-                      {loginResendSuccess ? (
-                        <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Verification email sent! Check your inbox.</span>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={handleLoginResendVerification}
-                          disabled={loginResendLoading}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                        >
-                          {loginResendLoading ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <RefreshCw className="w-3 h-3" />
-                          )}
-                          <span>Resend Verification Email</span>
-                        </button>
-                      )}
-                    </div>
-                  )}
+                <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-xl p-4 flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span className="flex-1">{loginError}</span>
                 </div>
               )}
 
@@ -543,7 +403,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab 
               </button>
 
               <p className="text-white/30 text-xs text-center">
-                You'll receive a verification email after registering.
+                Create an account to start comparing engineering drawings.
               </p>
             </form>
           )}

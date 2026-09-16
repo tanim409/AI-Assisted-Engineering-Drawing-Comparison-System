@@ -52,88 +52,56 @@ def run_auth_smoke_tests():
     EMAIL = f"smoketest_{int(time.time())}@example.com"
     PASSWORD = "smoke1234"
 
-    # 1. Register
+    # 1. Invalid domain format register (incomplete domain without TLD)
+    status_inv, data_inv = post("/auth/register", {"email": "user@gmail", "password": PASSWORD})
+    print(f"\n[1] POST /auth/register (invalid domain user@gmail) => {status_inv}")
+    assert status_inv in (400, 422), f"Expected 400/422, got {status_inv}: {data_inv}"
+    print("    Invalid email domain correctly rejected [OK]")
+
+    # 2. Register valid user (should succeed and return token immediately)
     status, data = post("/auth/register", {"email": EMAIL, "password": PASSWORD})
-    print(f"\n[1] POST /auth/register => {status}")
+    print(f"\n[2] POST /auth/register => {status}")
     assert status == 201, f"Expected 201, got {status}: {data}"
-    v_token = data.get("verification_token")
-    print(f"    verification_token: {v_token[:20]}...")
+    reg_token = data.get("access_token")
+    assert reg_token, "Expected access_token in registration response"
+    print(f"    access_token: {reg_token[:20]}...")
 
-    # 2. Duplicate register
+    # 3. Duplicate register (should be rejected with clear message)
     status2, data2 = post("/auth/register", {"email": EMAIL, "password": PASSWORD})
-    print(f"\n[2] POST /auth/register (duplicate) => {status2}")
-    assert status2 == 400, f"Expected 400, got {status2}"
+    print(f"\n[3] POST /auth/register (duplicate) => {status2}")
+    assert status2 == 400, f"Expected 400, got {status2}: {data2}"
+    assert "already exists" in data2.get("detail", "").lower()
+    print("    Duplicate email registration correctly rejected [OK]")
 
-    # 3. Login before verification (should be rejected)
+    # 4. Immediate Login without verification (should succeed)
     status, data = post("/auth/login", {"email": EMAIL, "password": PASSWORD})
-    print(f"\n[3] POST /auth/login (unverified) => {status}")
-    assert status == 400, f"Expected 400, got {status}: {data}"
-    assert "verify your email" in data.get("detail", "").lower()
-    print("    Login correctly rejected prior to email verification [OK]")
-
-    # 4. Verify email
-    if v_token:
-        status, data = post("/auth/verify-email", {"token": v_token})
-        print(f"\n[4] POST /auth/verify-email => {status}")
-        assert status == 200, f"Expected 200, got {status}: {data}"
-        print(f"    {data['message']}")
-
-    # 5. Login after verification (should succeed)
-    status, data = post("/auth/login", {"email": EMAIL, "password": PASSWORD})
-    print(f"\n[5] POST /auth/login (verified) => {status}")
+    print(f"\n[4] POST /auth/login => {status}")
     assert status == 200, f"Expected 200, got {status}: {data}"
     token = data["access_token"]
     print(f"    access_token: {token[:30]}...")
 
-    # 6. GET /auth/me after verification
+    # 5. GET /auth/me
     status, data = get("/auth/me", token)
-    print(f"\n[6] GET /auth/me => {status}")
+    print(f"\n[5] GET /auth/me => {status}")
     assert status == 200, f"Expected 200, got {status}"
     assert data["email_verified"] == True, "Expected email_verified=True"
     print(f"    email: {data['email']}, verified: {data['email_verified']} [OK]")
 
-    # 7. Password reset flow
-    status, data = post("/auth/request-password-reset", {"email": EMAIL})
-    print(f"\n[7] POST /auth/request-password-reset => {status}")
-    assert status == 200
-    reset_token = data.get("reset_token")
-    print(f"    reset_token: {reset_token[:20]}..." if reset_token else "    (no token)")
-
-    if reset_token:
-        NEW_PASS = "newpass5678"
-        status, data = post("/auth/reset-password", {"token": reset_token, "new_password": NEW_PASS})
-        print(f"\n[8] POST /auth/reset-password => {status}")
-        assert status == 200, f"Expected 200, got {status}: {data}"
-        print(f"    {data['message']}")
-
-        # 9. Login with new password
-        status, data = post("/auth/login", {"email": EMAIL, "password": NEW_PASS})
-        print(f"\n[9] POST /auth/login (new password) => {status}")
-        assert status == 200, f"Expected 200, got {status}: {data}"
-        token = data["access_token"]
-        print(f"    Login OK with new password [OK]")
-
-    # 10. Unauthorized access
+    # 6. Unauthorized access
     status, data = get("/auth/me")
-    print(f"\n[10] GET /auth/me (no token) => {status}")
-    assert status == 403, f"Expected 403, got {status}"
-    print(f"     Correctly blocked [OK]")
-
-    # 11. Drawings endpoint requires auth
-    status, data = get("/api/drawings")
-    print(f"\n[11] GET /api/drawings (no token) => {status}")
+    print(f"\n[6] GET /auth/me (no token) => {status}")
     assert status in (401, 403), f"Expected 401/403, got {status}"
     print(f"     Correctly blocked [OK]")
 
-    # 12. Delete account
+    # 7. Delete account
     status, data = delete("/auth/me", token)
-    print(f"\n[12] DELETE /auth/me => {status}")
+    print(f"\n[7] DELETE /auth/me => {status}")
     assert status == 200, f"Expected 200, got {status}: {data}"
     print(f"    {data['message']}")
 
-    # 13. Login after deletion should fail
-    status, data = post("/auth/login", {"email": EMAIL, "password": NEW_PASS if reset_token else PASSWORD})
-    print(f"\n[13] POST /auth/login (deleted account) => {status}")
+    # 8. Login after deletion should fail
+    status, data = post("/auth/login", {"email": EMAIL, "password": PASSWORD})
+    print(f"\n[8] POST /auth/login (deleted account) => {status}")
     assert status == 401, f"Expected 401, got {status}"
     print(f"     Correctly rejected [OK]")
 

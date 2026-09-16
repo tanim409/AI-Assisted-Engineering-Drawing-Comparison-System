@@ -22,7 +22,6 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AuthPage } from './components/AuthPage';
 import { AuthToast } from './components/AuthToast';
 import { Header } from './components/Header';
-import { VerifyEmailPage } from './components/VerifyEmailPage';
 import { ResetPasswordPage } from './components/ResetPasswordPage';
 import { LandingPage } from './components/LandingPage';
 import { UploadZone } from './components/UploadZone';
@@ -107,16 +106,8 @@ function AppShell() {
   const tokenParam = searchParams.get('token') || '';
 
   if (publicRoute === 'verify-email' || window.location.pathname.includes('/verify-email')) {
-    return (
-      <VerifyEmailPage
-        token={tokenParam}
-        onOpenLogin={() => {
-          window.history.replaceState({}, '', '/');
-          setPublicRoute(null);
-          openAuthModal('login');
-        }}
-      />
-    );
+    window.history.replaceState({}, '', '/');
+    setPublicRoute(null);
   }
 
   if (publicRoute === 'reset-password' || window.location.pathname.includes('/reset-password')) {
@@ -305,7 +296,21 @@ function MainApp({
     try {
       let comparisonResult: ComparisonResult;
       if (oldFile instanceof File && newFile instanceof File && !simulatedError) {
-        const { result: res } = await uploadAndCompare(oldFile, newFile);
+        const { result: res } = await uploadAndCompare(
+          oldFile,
+          newFile,
+          undefined,
+          undefined,
+          undefined,
+          {
+            onJobProgress: (job) => {
+              if (job.status === 'processing' || job.status === 'pending') {
+                setJobProgress(job.progress_message || `Job ${job.status}…`);
+              }
+            },
+            abortSignal: controller.signal,
+          }
+        );
         comparisonResult = res;
       } else {
         comparisonResult = await runDrawingComparison({

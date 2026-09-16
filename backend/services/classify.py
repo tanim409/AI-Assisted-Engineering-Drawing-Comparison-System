@@ -148,8 +148,8 @@ _USER_PROMPT_TEMPLATE = (
 def _classify_via_gemini(batch_regions: list, patch_images: list, start_index: int) -> dict:
     """Send side-by-side crop patch images to Gemini via OpenAI-compatible endpoint with enforced structured output.
     
-    Tries Google Direct API first. If Google API fails (e.g. 429 quota, auth error),
-    falls back to OpenRouter API (google/gemini-2.5-flash).
+    Uses Google Direct API (GOOGLE_API_KEY). If Google API fails (e.g. 429 quota, auth error),
+    uses honest local fallback.
     """
     n = len(patch_images)
     user_content: list = [
