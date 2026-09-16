@@ -246,7 +246,7 @@ def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     clean_email = normalize_email(email)
     with connect() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM users WHERE email = %s", (clean_email,))
+            cursor.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(%s)", (clean_email,))
             row = cursor.fetchone()
     return dict(row) if row else None
 
@@ -264,7 +264,7 @@ def create_user(email: str, password: str) -> Dict[str, Any]:
     hashed = hash_password(password)
     with connect() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT user_id FROM users WHERE email = %s", (clean_email,))
+            cursor.execute("SELECT user_id FROM users WHERE LOWER(email) = LOWER(%s)", (clean_email,))
             if cursor.fetchone():
                 raise HTTPException(status_code=400, detail="User with this email already exists")
 
