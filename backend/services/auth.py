@@ -83,43 +83,64 @@ def get_frontend_url() -> str:
 
 
 def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[str] = None):
-    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER", "").strip()
-    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
-    smtp_from = os.getenv("SMTP_FROM", "no-reply@engineeringdrawings.com").strip()
+    smtp_password = os.getenv("SMTP_PASSWORD", "").strip().strip('"').strip("'").replace(" ", "")
+    smtp_from = os.getenv("SMTP_FROM", "").strip() or smtp_user or "no-reply@engineeringdrawings.com"
 
     sender_header = f"Engineering Review <{smtp_from}>" if "<" not in smtp_from else smtp_from
-    print(f"\n--- [EMAIL SENT] to: {to_email} ---\nSender: {sender_header}\nSubject: {subject}\n{body_text}\n-----------------------------------\n")
+    print(f"\n--- [EMAIL ATTEMPT] to: {to_email} via {smtp_host}:{smtp_port} ---\nSender: {sender_header}\nSubject: {subject}\n-----------------------------------\n")
 
-    if smtp_host and smtp_user:
-        try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = sender_header
-            msg["To"] = to_email
+    if not smtp_host or not smtp_user or not smtp_password:
+        print(f"[Email Warning] Missing credentials: host='{smtp_host}', user='{smtp_user}', password_set={bool(smtp_password)}. Email not sent.")
+        return
 
-            part_text = MIMEText(body_text, "plain", "utf-8")
-            msg.attach(part_text)
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = sender_header
+        msg["To"] = to_email
 
-            if body_html:
-                part_html = MIMEText(body_html, "html", "utf-8")
-                msg.attach(part_html)
+        part_text = MIMEText(body_text, "plain", "utf-8")
+        msg.attach(part_text)
 
-            if smtp_port == 465:
-                with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15) as server:
-                    server.login(smtp_user, smtp_password)
-                    server.sendmail(smtp_from, [to_email], msg.as_string())
-            else:
-                with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
-                    server.starttls()
-                    server.login(smtp_user, smtp_password)
-                    server.sendmail(smtp_from, [to_email], msg.as_string())
-            print(f"[Email Success] Sent email to {to_email} via {smtp_host}")
-        except Exception as e:
-            print(f"[Email Error] Failed to send email via SMTP ({smtp_host}:{smtp_port}): {e}")
-    else:
-        print("[Email Warning] SMTP_HOST or SMTP_USER environment variables are missing. Email was not sent via SMTP.")
+        if body_html:
+            part_html = MIMEText(body_html, "html", "utf-8")
+            msg.attach(part_html)
+
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15) as server:
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_from, [to_email], msg.as_string())
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_from, [to_email], msg.as_string())
+        print(f"[Email Success] Sent email to {to_email} via {smtp_host}:{smtp_port}")
+        return
+    except Exception as e1:
+        print(f"[Email Primary Error] Failed on {smtp_host}:{smtp_port}: {e1}")
+
+    # Fallback attempt on port 465 (SSL) if primary was 587, or port 587 if primary was 465
+    fallback_port = 465 if smtp_port != 465 else 587
+    print(f"[Email Fallback] Retrying via {smtp_host}:{fallback_port}...")
+    try:
+        if fallback_port == 465:
+            with smtplib.SMTP_SSL(smtp_host, 465, timeout=15) as server:
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_from, [to_email], msg.as_string())
+        else:
+            with smtplib.SMTP(smtp_host, 587, timeout=15) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_from, [to_email], msg.as_string())
+        print(f"[Email Fallback Success] Sent email to {to_email} via {smtp_host}:{fallback_port}")
+    except Exception as e2:
+        print(f"[Email Fallback Error] Failed on {smtp_host}:{fallback_port}: {e2}")
+        import traceback
+        traceback.print_exc()
 
 
 def _build_email_html(title: str, preheader: str, body_html: str, cta_label: str, cta_url: str, footer_note: str) -> str:
