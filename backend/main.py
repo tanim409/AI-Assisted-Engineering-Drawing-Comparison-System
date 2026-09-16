@@ -14,11 +14,21 @@ from services import jobs
 
 app = FastAPI(title="Engineering Drawing Comparison Application")
 
-frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+]
+frontend_env = os.getenv("FRONTEND_URL", "").rstrip("/")
+if frontend_env:
+    allowed_origins.append(frontend_env)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[frontend_url, "http://localhost:5173", "http://localhost:3000"],
+    allow_origin_regex=r"https?://.*\.onrender\.com|https?://localhost:\d+|https?://127\.0\.0\.1:\d+",
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
