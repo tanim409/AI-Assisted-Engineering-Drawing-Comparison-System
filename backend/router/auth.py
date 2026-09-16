@@ -53,7 +53,6 @@ def register(req: RegisterRequest, background_tasks: BackgroundTasks):
     return {
         "message": "User registered successfully. Please verify your email.",
         "user": sanitize_user(user),
-        "verification_token": v_token  # returned for easy local testing
     }
 
 
@@ -132,7 +131,6 @@ def request_password_reset(req: RequestPasswordResetRequest, background_tasks: B
     # Generic success response to prevent account enumeration
     return {
         "message": "If an account exists with that email, a password reset token has been sent.",
-        "reset_token": reset_token  # returned for easy local testing
     }
 
 

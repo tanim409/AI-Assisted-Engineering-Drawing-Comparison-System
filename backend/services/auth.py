@@ -2,7 +2,7 @@ import os
 import services.config # Loads env vars
 import secrets
 import smtplib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from typing import Any, Dict, Optional
 import jwt
@@ -25,7 +25,9 @@ from model.db import connect
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security_scheme = HTTPBearer(auto_error=False)
 
-JWT_SECRET = os.getenv("JWT_SECRET_KEY", "eng-drawing-jwt-secret-key-change-in-prod-2026")
+JWT_SECRET = os.getenv("JWT_SECRET_KEY")
+if not JWT_SECRET:
+    raise RuntimeError("JWT_SECRET_KEY environment variable is missing or empty. Please configure JWT_SECRET_KEY in environment variables.")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_HOURS", "24"))
 
@@ -285,7 +287,8 @@ def verify_google_id_token(token_str: str) -> Dict[str, Any]:
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Google token verification failed: {str(e)}")
+        print(f"[Google Auth Error] Token verification failed: {e}")
+        raise HTTPException(status_code=401, detail="Google token verification failed")
 
 
 def get_or_create_google_user(email: str, google_id: str) -> Dict[str, Any]:
@@ -322,7 +325,7 @@ def get_or_create_google_user(email: str, google_id: str) -> Dict[str, Any]:
 
 def create_email_verification_token(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
-    expires_at = datetime.now() + timedelta(hours=24)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
     with connect() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
@@ -350,7 +353,7 @@ def verify_email_token(token: str) -> bool:
 
 def create_password_reset_token(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
-    expires_at = datetime.now() + timedelta(hours=2)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=2)
     with connect() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
