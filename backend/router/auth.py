@@ -95,17 +95,7 @@ def login(req: LoginRequest):
         raise HTTPException(status_code=400, detail="Account is disabled")
 
     if not user.get("email_verified"):
-        import os
-        smtp_user = os.getenv("SMTP_USER", "").strip()
-        if not smtp_user:
-            # Auto-verify unverified accounts if SMTP is not configured in production environment
-            from model.db import connect
-            with connect() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute("UPDATE users SET email_verified = TRUE WHERE user_id = %s", (user["user_id"],))
-            user["email_verified"] = True
-        else:
-            raise HTTPException(status_code=400, detail="Please verify your email before logging in")
+        raise HTTPException(status_code=400, detail="Please verify your email before logging in")
 
     access_token = auth.create_access_token({"sub": str(user["user_id"]), "email": user["email"]})
     return {

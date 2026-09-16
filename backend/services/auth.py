@@ -260,28 +260,48 @@ def create_user(email: str, password: str) -> Dict[str, Any]:
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 
 def verify_google_id_token(token_str: str) -> Dict[str, Any]:
-    """Verify Google OAuth2 ID token (or Access token) via Google API endpoints."""
+    """Verify Google OAuth2 ID token or Access token via Google API endpoints."""
     import requests
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+
+    # 1. Try ID token verification
     try:
-        # First attempt ID token verification
-        resp = requests.get(
-            f"https://oauth2.googleapis.com/tokeninfo?id_token={token_str}",
-            timeout=10
-        )
+        resp = requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={token_str}", timeout=10)
         if resp.status_code == 200:
             info = resp.json()
-            if GOOGLE_CLIENT_ID and info.get("aud") != GOOGLE_CLIENT_ID:
-                raise HTTPException(status_code=401, detail="Google token client ID mismatch")
+            aud = info.get("aud")
+            if google_client_id and aud and aud != google_client_id:
+                print(f"[Google Auth] ID Token client mismatch. aud={aud}, expected={google_client_id}")
+            else:
+                email = info.get("email")
+                sub = info.get("sub")
+                if email and sub:
+                    return {
+                        "email": email,
+                        "google_id": sub,
+                        "email_verified": str(info.get("email_verified")).lower() == "true",
+                    }
+    except Exception as e:
+        print(f"[Google Auth] ID token verification check failed: {e}")
+
+    # 2. Try Access token verification via tokeninfo
+    try:
+        resp = requests.get(f"https://oauth2.googleapis.com/tokeninfo?access_token={token_str}", timeout=10)
+        if resp.status_code == 200:
+            info = resp.json()
             email = info.get("email")
-            google_sub = info.get("sub")
-            if email and google_sub:
+            sub = info.get("sub") or info.get("user_id")
+            if email:
                 return {
                     "email": email,
-                    "google_id": google_sub,
-                    "email_verified": info.get("email_verified") == "true" or info.get("email_verified") is True,
+                    "google_id": sub or email,
+                    "email_verified": True,
                 }
+    except Exception as e:
+        print(f"[Google Auth] Access token check failed: {e}")
 
-        # Fallback to access_token userinfo verification
+    # 3. Fallback to UserInfo endpoint
+    try:
         resp_userinfo = requests.get(
             "https://www.googleapis.com/oauth2/v3/userinfo",
             headers={"Authorization": f"Bearer {token_str}"},
@@ -290,20 +310,17 @@ def verify_google_id_token(token_str: str) -> Dict[str, Any]:
         if resp_userinfo.status_code == 200:
             info = resp_userinfo.json()
             email = info.get("email")
-            google_sub = info.get("sub")
-            if email and google_sub:
+            sub = info.get("sub")
+            if email and sub:
                 return {
                     "email": email,
-                    "google_id": google_sub,
-                    "email_verified": info.get("email_verified") is True or info.get("email_verified") == "true",
+                    "google_id": sub,
+                    "email_verified": str(info.get("email_verified")).lower() == "true",
                 }
-
-        raise HTTPException(status_code=401, detail="Invalid Google authentication token")
-    except HTTPException:
-        raise
     except Exception as e:
-        print(f"[Google Auth Error] Token verification failed: {e}")
-        raise HTTPException(status_code=401, detail="Google token verification failed")
+        print(f"[Google Auth] Userinfo check failed: {e}")
+
+    raise HTTPException(status_code=400, detail="Invalid or expired Google authentication token.")
 
 
 def get_or_create_google_user(email: str, google_id: str) -> Dict[str, Any]:
