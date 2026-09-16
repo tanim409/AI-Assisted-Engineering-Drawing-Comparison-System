@@ -233,8 +233,9 @@ def create_user(email: str, password: str) -> Dict[str, Any]:
             cursor.execute("""
                 INSERT INTO users (email, password_hash, email_verified, is_active)
                 VALUES (%s, %s, FALSE, TRUE)
+                RETURNING user_id
             """, (clean_email, hashed))
-            user_id = cursor.lastrowid
+            user_id = cursor.fetchone()["user_id"]
 
     return get_user_by_id(user_id)
 
@@ -312,8 +313,9 @@ def get_or_create_google_user(email: str, google_id: str) -> Dict[str, Any]:
             cursor.execute("""
                 INSERT INTO users (email, google_id, email_verified, is_active)
                 VALUES (%s, %s, TRUE, TRUE)
+                RETURNING user_id
             """, (clean_email, google_id))
-            user_id = cursor.lastrowid
+            user_id = cursor.fetchone()["user_id"]
 
     return get_user_by_id(user_id)
 
