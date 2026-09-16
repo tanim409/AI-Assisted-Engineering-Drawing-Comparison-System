@@ -1,3 +1,4 @@
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Any, Dict, Optional
 from services import auth
