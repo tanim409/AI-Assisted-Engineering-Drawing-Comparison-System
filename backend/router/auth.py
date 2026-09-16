@@ -62,18 +62,24 @@ class GoogleAuthRequest(BaseModel):
 
 @router.post("/google")
 def google_auth(req: GoogleAuthRequest):
-    g_info = auth.verify_google_id_token(req.id_token)
-    user = auth.get_or_create_google_user(g_info["email"], g_info["google_id"])
+    try:
+        g_info = auth.verify_google_id_token(req.id_token)
+        user = auth.get_or_create_google_user(g_info["email"], g_info["google_id"])
 
-    if not user.get("is_active"):
-        raise HTTPException(status_code=400, detail="Account is disabled")
+        if not user.get("is_active"):
+            raise HTTPException(status_code=400, detail="Account is disabled")
 
-    access_token = auth.create_access_token({"sub": str(user["user_id"]), "email": user["email"]})
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": sanitize_user(user),
-    }
+        access_token = auth.create_access_token({"sub": str(user["user_id"]), "email": user["email"]})
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": sanitize_user(user),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Google Auth Error]: {e}")
+        raise HTTPException(status_code=400, detail=f"Google authentication failed: {str(e)}")
 
 
 @router.post("/login")
@@ -89,7 +95,17 @@ def login(req: LoginRequest):
         raise HTTPException(status_code=400, detail="Account is disabled")
 
     if not user.get("email_verified"):
-        raise HTTPException(status_code=400, detail="Please verify your email before logging in")
+        import os
+        smtp_user = os.getenv("SMTP_USER", "").strip()
+        if not smtp_user:
+            # Auto-verify unverified accounts if SMTP is not configured in production environment
+            from model.db import connect
+            with connect() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("UPDATE users SET email_verified = TRUE WHERE user_id = %s", (user["user_id"],))
+            user["email_verified"] = True
+        else:
+            raise HTTPException(status_code=400, detail="Please verify your email before logging in")
 
     access_token = auth.create_access_token({"sub": str(user["user_id"]), "email": user["email"]})
     return {

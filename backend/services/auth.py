@@ -83,9 +83,16 @@ def get_frontend_url() -> str:
 
 
 def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[str] = None):
-    sender_header = f"Engineering Review <{SMTP_FROM}>" if "<" not in SMTP_FROM else SMTP_FROM
+    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER", "").strip()
+    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
+    smtp_from = os.getenv("SMTP_FROM", "no-reply@engineeringdrawings.com").strip()
+
+    sender_header = f"Engineering Review <{smtp_from}>" if "<" not in smtp_from else smtp_from
     print(f"\n--- [EMAIL SENT] to: {to_email} ---\nSender: {sender_header}\nSubject: {subject}\n{body_text}\n-----------------------------------\n")
-    if SMTP_HOST and SMTP_USER:
+
+    if smtp_host and smtp_user:
         try:
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
@@ -99,12 +106,20 @@ def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[
                 part_html = MIMEText(body_html, "html", "utf-8")
                 msg.attach(part_html)
 
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=5) as server:
-                server.starttls()
-                server.login(SMTP_USER, SMTP_PASSWORD)
-                server.sendmail(SMTP_FROM, [to_email], msg.as_string())
+            if smtp_port == 465:
+                with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15) as server:
+                    server.login(smtp_user, smtp_password)
+                    server.sendmail(smtp_from, [to_email], msg.as_string())
+            else:
+                with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+                    server.starttls()
+                    server.login(smtp_user, smtp_password)
+                    server.sendmail(smtp_from, [to_email], msg.as_string())
+            print(f"[Email Success] Sent email to {to_email} via {smtp_host}")
         except Exception as e:
-            print(f"[Email Error] Failed to send email via SMTP: {e}")
+            print(f"[Email Error] Failed to send email via SMTP ({smtp_host}:{smtp_port}): {e}")
+    else:
+        print("[Email Warning] SMTP_HOST or SMTP_USER environment variables are missing. Email was not sent via SMTP.")
 
 
 def _build_email_html(title: str, preheader: str, body_html: str, cta_label: str, cta_url: str, footer_note: str) -> str:
@@ -295,6 +310,12 @@ def get_or_create_google_user(email: str, google_id: str) -> Dict[str, Any]:
     clean_email = normalize_email(email)
     with connect() as conn:
         with conn.cursor() as cursor:
+            # Ensure google_id column exists on legacy schemas
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255);")
+            except Exception:
+                pass
+
             # Check by google_id first
             cursor.execute("SELECT * FROM users WHERE google_id = %s", (google_id,))
             user = cursor.fetchone()
