@@ -1,4 +1,5 @@
 import os
+import socket
 import services.config # Loads env vars
 import secrets
 import smtplib
