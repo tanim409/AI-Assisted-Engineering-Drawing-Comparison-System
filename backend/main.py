@@ -1,4 +1,5 @@
 import services.config  # MUST be first to load .env variables
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
