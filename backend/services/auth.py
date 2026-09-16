@@ -82,6 +82,22 @@ def get_frontend_url() -> str:
     return os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 
 
+import socket
+
+def _get_ipv4_host(host: str) -> str:
+    """Resolve host to IPv4 address to avoid 'Errno 101 Network is unreachable' on IPv6-disabled cloud hosts like Render."""
+    try:
+        results = socket.getaddrinfo(host, None, socket.AF_INET)
+        for family, type_, proto, canonname, sockaddr in results:
+            if family == socket.AF_INET:
+                ip = sockaddr[0]
+                print(f"[DNS IPv4] Resolved {host} -> {ip}")
+                return ip
+    except Exception as e:
+        print(f"[DNS IPv4 Warning] Failed to resolve {host} to IPv4: {e}")
+    return host
+
+
 def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[str] = None, raise_on_error: bool = False):
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
@@ -99,6 +115,9 @@ def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[
             raise RuntimeError(msg)
         return False
 
+    # Force IPv4 resolution to prevent '[Errno 101] Network is unreachable' on cloud hosts
+    target_ip = _get_ipv4_host(smtp_host)
+
     primary_err: Optional[str] = None
     try:
         msg = MIMEMultipart("alternative")
@@ -114,15 +133,15 @@ def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[
             msg.attach(part_html)
 
         if smtp_port == 465:
-            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15) as server:
+            with smtplib.SMTP_SSL(target_ip, smtp_port, server_hostname=smtp_host, timeout=15) as server:
                 server.login(smtp_user, smtp_password)
                 server.sendmail(smtp_from, [to_email], msg.as_string())
         else:
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
-                server.starttls()
+            with smtplib.SMTP(target_ip, smtp_port, timeout=15) as server:
+                server.starttls(server_hostname=smtp_host)
                 server.login(smtp_user, smtp_password)
                 server.sendmail(smtp_from, [to_email], msg.as_string())
-        print(f"[Email Success] Sent email to {to_email} via {smtp_host}:{smtp_port}")
+        print(f"[Email Success] Sent email to {to_email} via {smtp_host}:{smtp_port} (IP: {target_ip})")
         return True
     except Exception as e1:
         primary_err = str(e1)
@@ -130,15 +149,16 @@ def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[
 
     # Fallback attempt on port 465 (SSL) if primary was 587, or port 587 if primary was 465
     fallback_port = 465 if smtp_port != 465 else 587
-    print(f"[Email Fallback] Retrying via {smtp_host}:{fallback_port}...")
+    fallback_err: Optional[str] = None
+    print(f"[Email Fallback] Retrying via {smtp_host}:{fallback_port} (IPv4)...")
     try:
         if fallback_port == 465:
-            with smtplib.SMTP_SSL(smtp_host, 465, timeout=15) as server:
+            with smtplib.SMTP_SSL(target_ip, 465, server_hostname=smtp_host, timeout=15) as server:
                 server.login(smtp_user, smtp_password)
                 server.sendmail(smtp_from, [to_email], msg.as_string())
         else:
-            with smtplib.SMTP(smtp_host, 587, timeout=15) as server:
-                server.starttls()
+            with smtplib.SMTP(target_ip, 587, timeout=15) as server:
+                server.starttls(server_hostname=smtp_host)
                 server.login(smtp_user, smtp_password)
                 server.sendmail(smtp_from, [to_email], msg.as_string())
         print(f"[Email Fallback Success] Sent email to {to_email} via {smtp_host}:{fallback_port}")
