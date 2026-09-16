@@ -152,3 +152,20 @@ def reset_password(req: ResetPasswordSubmitRequest):
 def delete_account(current_user: dict = Depends(auth.get_current_user)):
     auth.delete_user_account(current_user["user_id"])
     return {"message": "Account and all owned data deleted successfully"}
+
+
+@router.get("/test-email")
+@router.post("/test-email")
+def test_email(to: str = "tanimasif409@gmail.com"):
+    """Diagnostic endpoint to test server SMTP settings synchronously and return live status."""
+    try:
+        auth.send_email(
+            to_email=to,
+            subject="SMTP Diagnostic Test - Engineering Review",
+            body_text=f"This is a test email sent to {to} to verify your SMTP configuration.",
+            body_html=f"<h3>SMTP Verification Working!</h3><p>Your backend successfully sent an email to <b>{to}</b>.</p>",
+            raise_on_error=True
+        )
+        return {"status": "success", "message": f"Test email sent successfully to {to}!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SMTP Delivery Failed: {str(e)}")

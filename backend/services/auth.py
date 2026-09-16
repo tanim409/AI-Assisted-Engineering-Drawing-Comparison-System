@@ -82,7 +82,7 @@ def get_frontend_url() -> str:
     return os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 
 
-def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[str] = None):
+def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[str] = None, raise_on_error: bool = False):
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER", "").strip()
@@ -93,8 +93,11 @@ def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[
     print(f"\n--- [EMAIL ATTEMPT] to: {to_email} via {smtp_host}:{smtp_port} ---\nSender: {sender_header}\nSubject: {subject}\n-----------------------------------\n")
 
     if not smtp_host or not smtp_user or not smtp_password:
-        print(f"[Email Warning] Missing credentials: host='{smtp_host}', user='{smtp_user}', password_set={bool(smtp_password)}. Email not sent.")
-        return
+        msg = f"Missing SMTP credentials on server: host='{smtp_host}', user='{smtp_user}', password_set={bool(smtp_password)}."
+        print(f"[Email Warning] {msg}")
+        if raise_on_error:
+            raise RuntimeError(msg)
+        return False
 
     try:
         msg = MIMEMultipart("alternative")
@@ -119,7 +122,7 @@ def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[
                 server.login(smtp_user, smtp_password)
                 server.sendmail(smtp_from, [to_email], msg.as_string())
         print(f"[Email Success] Sent email to {to_email} via {smtp_host}:{smtp_port}")
-        return
+        return True
     except Exception as e1:
         print(f"[Email Primary Error] Failed on {smtp_host}:{smtp_port}: {e1}")
 
@@ -137,10 +140,14 @@ def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[
                 server.login(smtp_user, smtp_password)
                 server.sendmail(smtp_from, [to_email], msg.as_string())
         print(f"[Email Fallback Success] Sent email to {to_email} via {smtp_host}:{fallback_port}")
+        return True
     except Exception as e2:
         print(f"[Email Fallback Error] Failed on {smtp_host}:{fallback_port}: {e2}")
         import traceback
         traceback.print_exc()
+        if raise_on_error:
+            raise RuntimeError(f"SMTP send failed on port {smtp_port} ({e1}) and fallback port {fallback_port} ({e2})")
+        return False
 
 
 def _build_email_html(title: str, preheader: str, body_html: str, cta_label: str, cta_url: str, footer_note: str) -> str:
