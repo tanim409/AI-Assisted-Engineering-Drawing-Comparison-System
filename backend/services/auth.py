@@ -99,6 +99,7 @@ def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[
             raise RuntimeError(msg)
         return False
 
+    primary_err: Optional[str] = None
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
@@ -124,6 +125,7 @@ def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[
         print(f"[Email Success] Sent email to {to_email} via {smtp_host}:{smtp_port}")
         return True
     except Exception as e1:
+        primary_err = str(e1)
         print(f"[Email Primary Error] Failed on {smtp_host}:{smtp_port}: {e1}")
 
     # Fallback attempt on port 465 (SSL) if primary was 587, or port 587 if primary was 465
@@ -142,11 +144,12 @@ def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[
         print(f"[Email Fallback Success] Sent email to {to_email} via {smtp_host}:{fallback_port}")
         return True
     except Exception as e2:
+        fallback_err = str(e2)
         print(f"[Email Fallback Error] Failed on {smtp_host}:{fallback_port}: {e2}")
         import traceback
         traceback.print_exc()
         if raise_on_error:
-            raise RuntimeError(f"SMTP send failed on port {smtp_port} ({e1}) and fallback port {fallback_port} ({e2})")
+            raise RuntimeError(f"SMTP send failed on port {smtp_port} ({primary_err}) and fallback port {fallback_port} ({fallback_err})")
         return False
 
 
