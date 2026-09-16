@@ -96,7 +96,92 @@ def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
     return _original_getaddrinfo(host, port, family, type, proto, flags)
 
 
+def _send_via_resend(api_key: str, to_email: str, subject: str, body_text: str, body_html: Optional[str], raise_on_error: bool) -> bool:
+    import urllib.request
+    import json
+    sender = os.getenv("SMTP_FROM", "onboarding@resend.dev").strip()
+    if "<" in sender:
+        import re
+        m = re.search(r'<(.*?)>', sender)
+        sender = m.group(1) if m else "onboarding@resend.dev"
+    payload = {
+        "from": sender if ("@" in sender and not sender.endswith("@gmail.com")) else "onboarding@resend.dev",
+        "to": [to_email],
+        "subject": subject,
+        "text": body_text,
+    }
+    if body_html:
+        payload["html"] = body_html
+
+    try:
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status in (200, 201):
+                print(f"[Resend API Success] Sent email to {to_email}")
+                return True
+    except Exception as e:
+        print(f"[Resend API Error]: {e}")
+        if raise_on_error:
+            raise RuntimeError(f"Resend API email error: {e}")
+    return False
+
+
+def _send_via_brevo(api_key: str, to_email: str, subject: str, body_text: str, body_html: Optional[str], raise_on_error: bool) -> bool:
+    import urllib.request
+    import json
+    sender_email = os.getenv("SMTP_FROM", os.getenv("SMTP_USER", "")).strip() or "no-reply@engineeringdrawings.com"
+    payload = {
+        "sender": {"email": sender_email, "name": "Engineering Review"},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "textContent": body_text,
+    }
+    if body_html:
+        payload["htmlContent"] = body_html
+
+    try:
+        req = urllib.request.Request(
+            "https://api.brevo.com/v3/smtp/email",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "api-key": api_key,
+                "Content-Type": "application/json"
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status in (200, 201):
+                print(f"[Brevo API Success] Sent email to {to_email}")
+                return True
+    except Exception as e:
+        print(f"[Brevo API Error]: {e}")
+        if raise_on_error:
+            raise RuntimeError(f"Brevo API email error: {e}")
+    return False
+
+
 def send_email(to_email: str, subject: str, body_text: str, body_html: Optional[str] = None, raise_on_error: bool = False):
+    # 1. Try Resend HTTP API if key is configured (HTTPS Port 443 — NEVER blocked by Render)
+    resend_key = os.getenv("RESEND_API_KEY", "").strip()
+    if resend_key:
+        print(f"\n--- [EMAIL ATTEMPT] via Resend API to: {to_email} ---")
+        return _send_via_resend(resend_key, to_email, subject, body_text, body_html, raise_on_error)
+
+    # 2. Try Brevo HTTP API if key is configured (HTTPS Port 443 — NEVER blocked by Render)
+    brevo_key = os.getenv("BREVO_API_KEY", "").strip()
+    if brevo_key:
+        print(f"\n--- [EMAIL ATTEMPT] via Brevo API to: {to_email} ---")
+        return _send_via_brevo(brevo_key, to_email, subject, body_text, body_html, raise_on_error)
+
+    # 3. Fallback to standard SMTP
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
     smtp_port = int(os.getenv("SMTP_PORT", "465"))
     smtp_user = os.getenv("SMTP_USER", "").strip()
