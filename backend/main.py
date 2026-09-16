@@ -13,9 +13,11 @@ from services import jobs
 
 app = FastAPI(title="Engineering Drawing Comparison Application")
 
+frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[frontend_url, "http://localhost:5173", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
