@@ -98,14 +98,15 @@ def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
 
 def _send_via_resend(api_key: str, to_email: str, subject: str, body_text: str, body_html: Optional[str], raise_on_error: bool) -> bool:
     import urllib.request
+    import urllib.error
     import json
-    sender = os.getenv("SMTP_FROM", "onboarding@resend.dev").strip()
-    if "<" in sender:
-        import re
-        m = re.search(r'<(.*?)>', sender)
-        sender = m.group(1) if m else "onboarding@resend.dev"
+
+    resend_from = os.getenv("RESEND_FROM", "").strip()
+    if not resend_from:
+        resend_from = "Engineering Review <onboarding@resend.dev>"
+
     payload = {
-        "from": sender if ("@" in sender and not sender.endswith("@gmail.com")) else "onboarding@resend.dev",
+        "from": resend_from,
         "to": [to_email],
         "subject": subject,
         "text": body_text,
@@ -127,6 +128,11 @@ def _send_via_resend(api_key: str, to_email: str, subject: str, body_text: str, 
             if resp.status in (200, 201):
                 print(f"[Resend API Success] Sent email to {to_email}")
                 return True
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="ignore")
+        print(f"[Resend API Error {e.code}]: {err_body}")
+        if raise_on_error:
+            raise RuntimeError(f"Resend API Error ({e.code}): {err_body}")
     except Exception as e:
         print(f"[Resend API Error]: {e}")
         if raise_on_error:
