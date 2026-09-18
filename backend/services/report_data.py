@@ -122,7 +122,7 @@ def init_report(report_id: str, total_pages: int, page_matching: dict, common_re
                 total_pages,
                 json.dumps(page_matching) if page_matching else None,
                 common_render_dpi,
-                1 if page_size_mismatch else 0,
+                bool(page_size_mismatch),
                 json.dumps(page_size_mismatch_details) if page_size_mismatch_details else None,
             ))
             return report_id
@@ -176,7 +176,7 @@ def save_report_page(report_id: str, page: Dict[str, Any], owner_user_id: Option
                 page_match_method,
                 page_match_score,
                 comparison_mode,
-                1 if redesign_detected else 0,
+                bool(redesign_detected),
                 alignment_match_count,
                 alignment_inlier_count,
                 alignment_confidence,
@@ -184,7 +184,7 @@ def save_report_page(report_id: str, page: Dict[str, Any], owner_user_id: Option
                 render_dpi,
                 page_size_pts_width,
                 page_size_pts_height,
-                1 if page_size_mismatch_page else 0,
+                bool(page_size_mismatch_page),
                 json.dumps(page_size_mismatch_details_page) if page_size_mismatch_details_page else None,
                 overall_similarity,
                 overall_summary,
@@ -212,10 +212,11 @@ def complete_report(report_id: str, total_pages: int, page_matching: dict,
                 total_pages,
                 json.dumps(page_matching) if page_matching else None,
                 common_render_dpi,
-                1 if page_size_mismatch else 0,
+                bool(page_size_mismatch),
                 json.dumps(page_size_mismatch_details) if page_size_mismatch_details else None,
                 report_id,
             ))
+
 
 
 def fail_report(report_id: str, error: str = "", owner_user_id: Optional[int] = None) -> None:
