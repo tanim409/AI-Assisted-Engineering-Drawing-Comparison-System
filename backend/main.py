@@ -54,6 +54,13 @@ app.include_router(versioning_router, prefix="/api", tags=["Drawings"])
 app.include_router(jobs_router, prefix="/api", tags=["Jobs"])
 app.include_router(payment_router, prefix="/api", tags=["Payment"])
 
+
+@app.get("/health", tags=["Health"])
+@app.get("/api/health", tags=["Health"])
+async def health():
+    return {"status": "ok"}
+
+
 import os
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
