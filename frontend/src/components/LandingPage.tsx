@@ -748,7 +748,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               Simple, flexible plans for engineering teams
             </h2>
             <p className="text-base text-slate-600 leading-relaxed max-w-2xl mx-auto">
-              Pay securely via <strong>Stripe (Credit/Debit Card, Apple Pay)</strong> or <strong>bKash Direct Mobile Payment</strong>.
+              Pay instantly via <strong>bKash Direct Mobile Financial Service (MFS)</strong>.
             </p>
 
             {/* Monthly / Annual Billing Toggle Switch */}
@@ -761,8 +761,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 role="switch"
                 aria-checked={billingCycle === 'annual'}
                 onClick={() => setBillingCycle(billingCycle === 'monthly' ? 'annual' : 'monthly')}
-                className={`w-14 h-7 rounded-full p-1 relative transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 ${
-                  billingCycle === 'annual' ? 'bg-amber-400' : 'bg-slate-900'
+                className={`w-14 h-7 rounded-full p-1 relative transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#E2136E] focus:ring-offset-2 ${
+                  billingCycle === 'annual' ? 'bg-[#E2136E]' : 'bg-slate-900'
                 }`}
               >
                 <div
@@ -797,13 +797,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 </div>
                 <div>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight">
-                      {billingCycle === 'annual' ? '$15' : '$19'}
+                    <span className="text-4xl sm:text-5xl font-extrabold text-[#E2136E] font-mono tracking-tight">
+                      {billingCycle === 'annual' ? '৳1,760' : '৳2,200'}
                     </span>
                     <span className="text-sm text-slate-500 font-medium">/month</span>
                   </div>
-                  <span className="text-xs text-slate-500 block mt-1.5">
-                    {billingCycle === 'annual' ? 'Billed annually ($180/yr) • or ৳1,760 BDT/mo' : 'or ৳2,200 BDT per month'}
+                  <span className="text-xs text-slate-500 block mt-1.5 font-mono">
+                    {billingCycle === 'annual' ? 'Billed annually (৳21,120/yr) • $15 USD' : 'or $19 USD per month'}
                   </span>
                 </div>
                 <p className="text-sm text-slate-600 leading-relaxed">
@@ -841,27 +841,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <button
                   type="button"
                   onClick={() => handleOpenPayment('starter')}
-                  className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold rounded-xl transition-all shadow-sm hover:shadow-md cursor-pointer flex items-center justify-center gap-2 group active:scale-[0.99]"
+                  className="w-full py-3.5 bg-[#E2136E] hover:bg-[#C2105E] text-white text-sm font-semibold rounded-xl transition-all shadow-sm hover:shadow-md cursor-pointer flex items-center justify-center gap-2 group active:scale-[0.99]"
                 >
-                  <span>Pay with Stripe & bKash</span>
+                  <span>Pay with bKash</span>
                   <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                 </button>
                 <span className="block text-center text-[11px] text-slate-500 mt-2">
-                  Secure checkout
+                  Instant bKash MFS checkout
                 </span>
               </div>
             </div>
 
             {/* Tier 2: Professional (Featured Dark Theme) */}
-            <div className="bg-[#0F172A] text-white border-2 border-amber-400/90 rounded-[12px] p-8 flex flex-col justify-between shadow-[0_25px_60px_-15px_rgba(245,158,11,0.2)] relative transform lg:-translate-y-3">
-              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 text-xs font-extrabold uppercase tracking-wider px-4 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 whitespace-nowrap">
+            <div className="bg-[#0F172A] text-white border-2 border-[#E2136E] rounded-[12px] p-8 flex flex-col justify-between shadow-[0_25px_60px_-15px_rgba(226,19,110,0.25)] relative transform lg:-translate-y-3">
+              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-[#E2136E] text-white text-xs font-extrabold uppercase tracking-wider px-4 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 whitespace-nowrap">
                 <Sparkles className="w-3.5 h-3.5 fill-current" />
                 <span>Most Popular for QA Teams</span>
               </div>
 
               <div className="space-y-6 pt-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-extrabold text-amber-400 uppercase tracking-[0.07em]">
+                  <span className="text-xs font-extrabold text-[#E2136E] uppercase tracking-[0.07em]">
                     Professional
                   </span>
                   <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
@@ -870,13 +870,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 </div>
                 <div>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">
-                      {billingCycle === 'annual' ? '$63' : '$79'}
+                    <span className="text-4xl sm:text-5xl font-extrabold text-white font-mono tracking-tight">
+                      {billingCycle === 'annual' ? '৳7,360' : '৳9,200'}
                     </span>
                     <span className="text-sm text-slate-400 font-medium">/month</span>
                   </div>
-                  <span className="text-xs text-amber-300/90 block mt-1.5 font-medium">
-                    {billingCycle === 'annual' ? 'Billed annually ($756/yr) • or ৳7,360 BDT/mo' : 'or ৳9,200 BDT per month'}
+                  <span className="text-xs text-[#E2136E]/90 block mt-1.5 font-mono">
+                    {billingCycle === 'annual' ? 'Billed annually (৳88,320/yr) • $63 USD' : 'or $79 USD per month'}
                   </span>
                 </div>
                 <p className="text-sm text-slate-300 leading-relaxed">
@@ -884,7 +884,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 </p>
 
                 <div className="pt-6 border-t border-slate-800 space-y-3">
-                  <div className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-3">
+                  <div className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-3">
                     Everything in Starter, plus:
                   </div>
                   <div className="flex items-center gap-3 text-sm text-white font-medium">
@@ -918,13 +918,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <button
                   type="button"
                   onClick={() => handleOpenPayment('pro')}
-                  className="w-full py-3.5 bg-gradient-to-r from-amber-400 via-amber-300 to-amber-400 hover:from-amber-300 hover:to-amber-300 text-slate-950 text-sm font-extrabold rounded-xl transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer group active:scale-[0.99]"
+                  className="w-full py-3.5 bg-[#E2136E] hover:bg-[#C2105E] text-white text-sm font-extrabold rounded-xl transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer group active:scale-[0.99]"
                 >
-                  <span>Pay with Stripe & bKash</span>
+                  <span>Pay with bKash</span>
                   <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 stroke-[2.5]" />
                 </button>
                 <span className="block text-center text-xs text-slate-400">
-                  Instant Activation • SSL Encrypted • 30-Day Money-Back
+                  Instant Activation • Encrypted MFS • 30-Day Money-Back
                 </span>
               </div>
             </div>
@@ -942,13 +942,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 </div>
                 <div>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight">
-                      {billingCycle === 'annual' ? '$199' : '$249'}
+                    <span className="text-4xl sm:text-5xl font-extrabold text-[#E2136E] font-mono tracking-tight">
+                      {billingCycle === 'annual' ? '৳23,120' : '৳28,900'}
                     </span>
                     <span className="text-sm text-slate-500 font-medium">/month</span>
                   </div>
-                  <span className="text-xs text-slate-500 block mt-1.5">
-                    {billingCycle === 'annual' ? 'Billed annually ($2,388/yr) • or ৳23,120 BDT/mo' : 'or ৳28,900 BDT per month'}
+                  <span className="text-xs text-slate-500 block mt-1.5 font-mono">
+                    {billingCycle === 'annual' ? 'Billed annually (৳277,440/yr) • $199 USD' : 'or $249 USD per month'}
                   </span>
                 </div>
                 <p className="text-sm text-slate-600 leading-relaxed">
@@ -986,13 +986,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <button
                   type="button"
                   onClick={() => handleOpenPayment('enterprise')}
-                  className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold rounded-xl transition-all shadow-sm hover:shadow-md cursor-pointer flex items-center justify-center gap-2 group active:scale-[0.99]"
+                  className="w-full py-3.5 bg-[#E2136E] hover:bg-[#C2105E] text-white text-sm font-semibold rounded-xl transition-all shadow-sm hover:shadow-md cursor-pointer flex items-center justify-center gap-2 group active:scale-[0.99]"
                 >
-                  <span>Pay with Stripe & bKash</span>
+                  <span>Pay with bKash</span>
                   <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                 </button>
                 <span className="block text-center text-[11px] text-slate-500 mt-2">
-                  Secure checkout
+                  Instant bKash MFS checkout
                 </span>
               </div>
             </div>
@@ -1001,28 +1001,23 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           {/* Supported Gateways Banner */}
           <div className="mt-16 p-8 sm:p-10 bg-white border border-slate-200/90 rounded-[12px] shadow-sm flex flex-col md:flex-row items-center justify-between gap-6 max-w-6xl mx-auto">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0 shadow-sm">
-                <ShieldCheck className="w-6 h-6 text-emerald-400" />
+              <div className="w-12 h-12 rounded-xl bg-[#E2136E] text-white flex items-center justify-center shrink-0 shadow-sm font-extrabold text-lg">
+                bK
               </div>
               <div>
                 <h4 className="text-base font-bold text-slate-900">
-                  Supported Payment Gateways
+                  bKash Payment Gateway
                 </h4>
                 <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
-                  Instant processing with official tax invoice & automatic ECO workspace activation.
+                  Instant mobile wallet payment with OTP verification & automated ECO workspace activation.
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <div className="px-4 py-2.5 bg-blue-50/80 border border-blue-600/25 rounded-full flex items-center gap-2 text-blue-900 text-[13px] font-semibold shadow-2xs transition-all hover:bg-blue-50 hover:border-blue-600/40 hover:shadow-md hover:-translate-y-px cursor-default">
-                <CreditCard className="w-4 h-4 text-blue-600" />
-                <span>Stripe (Cards & Apple Pay)</span>
-              </div>
-
-              <div className="px-4 py-2.5 bg-[#E2136E]/10 border border-[#E2136E]/25 rounded-full flex items-center gap-2 text-[#C0105C] text-[13px] font-semibold shadow-2xs transition-all hover:bg-[#E2136E]/15 hover:border-[#E2136E]/40 hover:shadow-md hover:-translate-y-px cursor-default">
+              <div className="px-4 py-2.5 bg-[#E2136E]/10 border border-[#E2136E]/25 rounded-full flex items-center gap-2 text-[#C0105C] text-[13px] font-semibold shadow-2xs cursor-default">
                 <Smartphone className="w-4 h-4 text-[#E2136E]" />
-                <span>bKash (MFS · ৳ BDT)</span>
+                <span>bKash Direct MFS (৳ BDT)</span>
               </div>
             </div>
           </div>

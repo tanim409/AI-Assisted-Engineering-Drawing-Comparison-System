@@ -1,106 +1,192 @@
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel, Field
-from typing import Optional
+import os
 import uuid
 import datetime
+from typing import Optional
+from fastapi import APIRouter, HTTPException, Depends, Request, Query
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, Field
+
+from model.db import connect
+from services.auth import get_optional_current_user
+from services.bkash_service import bkash_service
 
 router = APIRouter()
 
-class StripeDetails(BaseModel):
-    cardholder_name: str
-    card_number: str
-    exp_month: str
-    exp_year: str
-    cvc: str
+PLAN_PRICES = {
+    "starter": {"usd": 19, "bdt": 2200, "name": "Starter Plan"},
+    "pro": {"usd": 79, "bdt": 9200, "name": "Professional Plan"},
+    "enterprise": {"usd": 249, "bdt": 28900, "name": "Enterprise Team"},
+}
 
-class BkashDetails(BaseModel):
-    phone_number: str
-    otp: str
-    pin: str
+class BkashCreateRequest(BaseModel):
+    plan_id: str = Field("pro", json_schema_extra={"example": "pro"})
+    billing_cycle: str = Field("monthly", json_schema_extra={"example": "monthly"})
+    payer_reference: Optional[str] = "01711111111"
 
-class PaymentRequest(BaseModel):
-    plan_id: str = Field(..., json_schema_extra={"example": "pro"})
-    billing_cycle: str = Field("monthly", json_schema_extra={"example": "monthly"}) # 'monthly' | 'annual'
-    payment_method: str = Field(..., json_schema_extra={"example": "stripe"}) # 'stripe' | 'bkash'
-    stripe_details: Optional[StripeDetails] = None
-    bkash_details: Optional[BkashDetails] = None
+class BkashExecuteRequest(BaseModel):
+    paymentID: str
 
-@router.post("/payment/checkout")
-def process_checkout(req: PaymentRequest):
-    """Process payment via Stripe or bKash gateway."""
-    plan_prices = {
-        "starter": {"usd": 19, "bdt": 2200, "name": "Starter Plan"},
-        "pro": {"usd": 79, "bdt": 9200, "name": "Professional Plan"},
-        "enterprise": {"usd": 249, "bdt": 28900, "name": "Enterprise Team"},
-    }
+def _activate_user_subscription(user_id: Optional[int], email: Optional[str], plan_id: str):
+    """Update user's subscription status in database upon verified payment success."""
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            if user_id:
+                cursor.execute("""
+                    UPDATE users SET plan_id = %s, subscription_status = 'active' WHERE user_id = %s
+                """, (plan_id, user_id))
+            elif email:
+                cursor.execute("""
+                    UPDATE users SET plan_id = %s, subscription_status = 'active' WHERE LOWER(email) = LOWER(%s)
+                """, (plan_id, email))
 
-    if req.plan_id not in plan_prices:
+
+@router.post("/bkash/create")
+def create_bkash_payment(
+    req: BkashCreateRequest,
+    current_user: Optional[dict] = Depends(get_optional_current_user),
+):
+    """Requirement 2: Creates a payment via bKash's /tokenized/checkout/create endpoint and returns bkashURL."""
+    if req.plan_id not in PLAN_PRICES:
         raise HTTPException(status_code=400, detail="Invalid plan selected")
 
-    plan_info = plan_prices[req.plan_id]
-    
-    # Billing cycle discount for annual (20% off)
+    plan_info = PLAN_PRICES[req.plan_id]
     multiplier = 0.8 * 12 if req.billing_cycle == "annual" else 1.0
-    usd_amount = round(plan_info["usd"] * multiplier, 2)
     bdt_amount = round(plan_info["bdt"] * multiplier)
+    invoice_number = f"INV-{uuid.uuid4().hex[:8].upper()}"
 
-    if req.payment_method == "stripe":
-        if not req.stripe_details or len(req.stripe_details.card_number.replace(" ", "")) < 12:
-            raise HTTPException(status_code=400, detail="Invalid Stripe card details provided")
-        tx_id = f"tx_str_{uuid.uuid4().hex[:10]}"
-        payment_status = "succeeded"
-        gateway_msg = "Paid via Stripe Payment Gateway (Card / Apple Pay)"
-        amount_str = f"${usd_amount:,.2f} USD"
+    user_id = current_user.get("user_id") if current_user else None
+    user_email = current_user.get("email") if current_user else "guest@engineeringdrawings.com"
 
-    elif req.payment_method == "bkash":
-        if not req.bkash_details or not req.bkash_details.phone_number:
-            raise HTTPException(status_code=400, detail="Invalid bKash account details provided")
-        tx_id = f"TRX{uuid.uuid4().hex[:8].upper()}"
-        payment_status = "succeeded"
-        gateway_msg = f"Paid via bKash MFS ({req.bkash_details.phone_number})"
-        amount_str = f"৳{bdt_amount:,} BDT"
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported payment method")
+    # Call bKash service create payment
+    bkash_resp = bkash_service.create_payment(
+        amount_bdt=bdt_amount,
+        invoice_number=invoice_number,
+        payer_reference=req.payer_reference or "01711111111"
+    )
 
-    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    payment_id = bkash_resp["paymentID"]
+    bkash_url = bkash_resp["bkashURL"]
+
+    # Store pending payment record in DB
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO payments (payment_id, user_id, user_email, plan_id, billing_cycle, amount_cents, currency, status, stripe_intent_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending', %s)
+            """, (payment_id, user_id, user_email, req.plan_id, req.billing_cycle, int(bdt_amount * 100), "bdt", invoice_number))
 
     return {
         "status": "success",
-        "message": f"Payment successfully processed for {plan_info['name']}",
-        "transaction_id": tx_id,
-        "plan_id": req.plan_id,
-        "plan_name": plan_info["name"],
-        "billing_cycle": req.billing_cycle,
-        "payment_method": req.payment_method,
-        "amount_formatted": amount_str,
-        "amount_usd": usd_amount,
+        "paymentID": payment_id,
+        "bkashURL": bkash_url,
+        "statusCode": bkash_resp.get("statusCode", "0000"),
+        "statusMessage": bkash_resp.get("statusMessage", "Successful"),
+        "invoiceNumber": invoice_number,
         "amount_bdt": bdt_amount,
-        "gateway_message": gateway_msg,
-        "timestamp": timestamp,
-        "invoice_pdf_url": f"/api/payment/invoice/{tx_id}",
     }
+
+
+@router.get("/bkash/callback")
+@router.post("/bkash/callback")
+def bkash_callback(
+    paymentID: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    current_user: Optional[dict] = Depends(get_optional_current_user),
+):
+    """Requirement 4: Receives bKash's redirect callback with paymentID and status."""
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    
+    if not paymentID or status != "success":
+        redirect_url = f"{frontend_url}/payment-callback?status=failed&paymentID={paymentID or ''}"
+        return RedirectResponse(url=redirect_url)
+
+    # Redirect to frontend callback handler to trigger independent backend verification
+    redirect_url = f"{frontend_url}/payment-callback?status=success&paymentID={paymentID}"
+    return RedirectResponse(url=redirect_url)
+
+
+@router.post("/bkash/execute")
+def execute_bkash_payment(
+    req: BkashExecuteRequest,
+    current_user: Optional[dict] = Depends(get_optional_current_user),
+):
+    """Requirement 5 & 7: Calls bKash execute endpoint and independently queries status to verify before updating database."""
+    payment_id = req.paymentID
+    if not payment_id:
+        raise HTTPException(status_code=400, detail="Missing paymentID parameter")
+
+    # Fetch pending payment from database
+    payment_record = None
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM payments WHERE payment_id = %s", (payment_id,))
+            row = cursor.fetchone()
+            if row:
+                payment_record = dict(row)
+
+    user_id = current_user.get("user_id") if current_user else (payment_record.get("user_id") if payment_record else None)
+    email = current_user.get("email") if current_user else (payment_record.get("user_email") if payment_record else None)
+    plan_id = payment_record.get("plan_id", "pro") if payment_record else "pro"
+    billing_cycle = payment_record.get("billing_cycle", "monthly") if payment_record else "monthly"
+
+    try:
+        # Independently verify via bKash execute + status query endpoint
+        verification = bkash_service.verify_and_execute_checkout(payment_id)
+        trx_id = verification["trxID"]
+
+        # Update DB payments record to succeeded
+        with connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE payments SET status = 'succeeded', updated_at = NOW() WHERE payment_id = %s
+                """, (payment_id,))
+
+        # Update DB users subscription status
+        _activate_user_subscription(user_id, email, plan_id)
+
+        plan_info = PLAN_PRICES.get(plan_id, {"usd": 79, "bdt": 9200, "name": "Professional Plan"})
+        multiplier = 0.8 * 12 if billing_cycle == "annual" else 1.0
+        bdt_amount = round(plan_info["bdt"] * multiplier)
+        usd_amount = round(plan_info["usd"] * multiplier, 2)
+
+        return {
+            "status": "success",
+            "message": f"Payment independently verified via bKash API. Subscription activated for {plan_info['name']}.",
+            "transaction_id": trx_id,
+            "paymentID": payment_id,
+            "plan_id": plan_id,
+            "plan_name": plan_info["name"],
+            "billing_cycle": billing_cycle,
+            "payment_method": "bkash",
+            "amount_formatted": f"৳{bdt_amount:,} BDT",
+            "amount_bdt": bdt_amount,
+            "amount_usd": usd_amount,
+            "gateway_message": f"Verified via bKash Tokenized Checkout (TRX: {trx_id})",
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "invoice_pdf_url": f"/api/payment/invoice/{trx_id}",
+        }
+    except Exception as e:
+        print(f"[bKash Verification Error]: {e}")
+        with connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE payments SET status = 'failed', updated_at = NOW() WHERE payment_id = %s
+                """, (payment_id,))
+        raise HTTPException(status_code=400, detail=f"bKash payment verification failed: {str(e)}")
 
 
 @router.get("/payment/plans")
 def get_payment_plans():
-    """Return live pricing plans and payment gateway metadata."""
+    """Return live pricing plans and bKash payment gateway metadata."""
     return {
         "gateways": [
             {
-                "id": "stripe",
-                "name": "Stripe",
-                "types": ["Credit Card", "Debit Card", "Apple Pay", "Google Pay"],
-                "currency": "USD",
-                "icon": "stripe",
-                "active": True
-            },
-            {
                 "id": "bkash",
-                "name": "bKash",
-                "types": ["bKash Wallet", "MFS Direct Payment"],
+                "name": "bKash Tokenized Checkout",
+                "types": ["bKash Wallet", "MFS Tokenized Payment", "Sandbox Tokenized Gateway"],
                 "currency": "BDT",
                 "icon": "bkash",
-                "active": True
+                "active": True,
             }
         ],
         "plans": [
@@ -118,7 +204,7 @@ def get_payment_plans():
                     "PNG & PDF drawing support",
                     "Basic ECO summary export",
                     "Email support",
-                ]
+                ],
             },
             {
                 "id": "pro",
@@ -135,7 +221,7 @@ def get_payment_plans():
                     "Annotated PDF & High-Res PNG Export",
                     "Multi-page PDF auto page-matching",
                     "Priority 24/7 technical support",
-                ]
+                ],
             },
             {
                 "id": "enterprise",
@@ -152,7 +238,7 @@ def get_payment_plans():
                     "SOC2 & ISO 27001 data confidentiality",
                     "Custom VLM model fine-tuning",
                     "Dedicated Solutions Engineer",
-                ]
-            }
-        ]
+                ],
+            },
+        ],
     }

@@ -113,8 +113,12 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
   useEffect(() => {
     if (drawings.length === 0) return;
     let cancelled = false;
+    // Only fetch details for drawings not already in drawingDetails map
+    const missingDrawings = drawings.filter((d) => !drawingDetails[d.drawing_id]);
+    if (missingDrawings.length === 0) return;
+
     Promise.allSettled(
-      drawings.map(async (d) => {
+      missingDrawings.map(async (d) => {
         const h = await getDrawingHistory(d.drawing_id);
         const pairs = h.consecutive_pairs ?? [];
         const revs = [...(h.revisions ?? [])].sort((a, b) => a.sequence_number - b.sequence_number);
@@ -127,16 +131,18 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
       })
     ).then((results) => {
       if (cancelled) return;
-      const map: Record<string, { updatedAt?: string; pending: number; totalPairs: number }> = {};
-      results.forEach((r) => {
-        if (r.status === 'fulfilled' && r.value) map[r.value.id] = r.value;
+      setDrawingDetails((prev) => {
+        const next = { ...prev };
+        results.forEach((r) => {
+          if (r.status === 'fulfilled' && r.value) next[r.value.id] = r.value;
+        });
+        return next;
       });
-      setDrawingDetails(map);
     });
     return () => {
       cancelled = true;
     };
-  }, [drawings]);
+  }, [drawings, drawingDetails]);
 
   const handleOpenReport = async (reportId: string) => {
     setBusy(true);
@@ -172,14 +178,24 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
       const created = await createDrawing(newName.trim() || undefined);
       setNewName('');
       setCreating(false);
-      await refreshDrawings();
-      await openHistory(created.drawing_id);
+      // Instantly open history view for newly created drawing (0ms delay)
+      setActiveDrawingId(created.drawing_id);
+      setHistory({
+        drawing_id: created.drawing_id,
+        name: created.name,
+        revisions: [],
+        consecutive_pairs: [],
+        all_comparisons: [],
+      });
+      // Refresh drawing list in background
+      void refreshDrawings();
     } catch (err: any) {
       setError(err?.message || 'Could not create drawing.');
     } finally {
       setBusy(false);
     }
   };
+
 
   const handleRemove = async (drawingId: string) => {
     try {

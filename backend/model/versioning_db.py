@@ -442,3 +442,36 @@ def list_comparisons(drawing_id: str, owner_user_id: Optional[int] = None) -> Li
             )
             rows = cursor.fetchall()
     return [dict(r) for r in rows]
+
+
+def get_drawing_history_data(drawing_id: str, owner_user_id: int) -> Optional[Dict[str, Any]]:
+    """Fetch drawing, revisions, and comparisons in a single PostgreSQL connection."""
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM drawings WHERE drawing_id = %s AND owner_user_id = %s",
+                (drawing_id, owner_user_id),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            drawing = dict(row)
+
+            cursor.execute(
+                "SELECT * FROM revisions WHERE drawing_id = %s ORDER BY sequence_number ASC",
+                (drawing_id,),
+            )
+            revisions = [dict(r) for r in cursor.fetchall()]
+
+            cursor.execute(
+                "SELECT * FROM comparisons WHERE drawing_id = %s ORDER BY computed_at ASC",
+                (drawing_id,),
+            )
+            comparisons = [dict(r) for r in cursor.fetchall()]
+
+    return {
+        "drawing": drawing,
+        "revisions": revisions,
+        "comparisons": comparisons,
+    }
+

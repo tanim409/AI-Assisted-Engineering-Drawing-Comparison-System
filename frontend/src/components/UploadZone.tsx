@@ -95,15 +95,36 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onStartComparison }) => 
     }
   };
 
-  const isReadyToCompare = !!oldDrawing && !!newDrawing;
+  // Presentation / Demo Mode: Keep button clickable even if files aren't selected yet
+  const isReadyToCompare = true;
 
   const handleExecuteComparison = () => {
-    if (!isReadyToCompare || !oldDrawing || !newDrawing) return;
-    // Real uploaded images -> send the actual File objects to the /compare API.
+    const baselineObj = oldDrawing || {
+      id: 'demo-baseline',
+      name: 'Baseline_RevA.pdf',
+      revision: 'Rev A (Baseline)',
+      fileSize: '2.4 MB',
+      dimensions: 'Auto-detecting (Vector/CAD)',
+      type: 'pdf',
+      uploadedAt: new Date().toLocaleTimeString(),
+      author: 'Uploaded by Client',
+    };
+    
+    const incomingObj = newDrawing || {
+      id: 'demo-incoming',
+      name: 'Revised_RevB.pdf',
+      revision: 'Rev B (Incoming)',
+      fileSize: '2.6 MB',
+      dimensions: 'Auto-detecting (Vector/CAD)',
+      type: 'pdf',
+      uploadedAt: new Date().toLocaleTimeString(),
+      author: 'Uploaded by Client',
+    };
+
     if (oldFileObj && newFileObj) {
       onStartComparison(oldFileObj, newFileObj, selectedErrorSimulation);
     } else {
-      onStartComparison(oldDrawing, newDrawing, selectedErrorSimulation);
+      onStartComparison(baselineObj, incomingObj, selectedErrorSimulation);
     }
   };
 

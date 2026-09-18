@@ -26,10 +26,14 @@ def _connection_kwargs(database: str) -> dict:
     }
 
 
+_db_checked = False
+
 def ensure_database_exists():
     """Create the configured PostgreSQL database when it is missing (local dev only)."""
-    if POSTGRES_DATABASE == "postgres":
+    global _db_checked
+    if _db_checked or POSTGRES_DATABASE == "postgres":
         return
+    _db_checked = True
     try:
         with psycopg.connect(**_connection_kwargs("postgres"), autocommit=True) as conn:
             with conn.cursor() as cursor:
@@ -42,8 +46,10 @@ def ensure_database_exists():
 
 
 def get_raw_connection():
-    ensure_database_exists()
+    if not _db_checked:
+        ensure_database_exists()
     return psycopg.connect(**_connection_kwargs(POSTGRES_DATABASE), row_factory=dict_row)
+
 
 
 @contextmanager

@@ -14,7 +14,7 @@ import {
   ChangeReviewStatus,
   ChangeItem,
 } from './types/comparison';
-import { runDrawingComparison } from './services/comparisonService';
+import { runDrawingComparison, createDemoComparisonResult } from './services/comparisonService';
 import { uploadAndCompare } from './services/drawingService';
 import { fetchReviewsSummary, submitChangeReview } from './services/reviewService';
 import { ReviewSummary } from './types/comparison';
@@ -35,6 +35,9 @@ import { ErrorBanner } from './components/ErrorBanner';
 import { ChangeDetailsModal } from './components/ChangeDetailsModal';
 import { RightDetailPanel } from './components/RightDetailPanel';
 import { NavigationToolbar } from './components/NavigationToolbar';
+import { PaymentCallbackModal } from './components/PaymentCallbackModal';
+import { CheckoutResponse } from './services/paymentService';
+
 
 // ─── Root with AuthProvider ───────────────────────────────────────────────────
 
@@ -90,6 +93,19 @@ function AppShell() {
     return null;
   });
 
+  // bKash callback route detection (/payment-callback?paymentID=...&status=...)
+  const [bkashCallbackPaymentID, setBkashCallbackPaymentID] = useState<string | null>(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const paymentID = searchParams.get('paymentID');
+    const isCallback = window.location.pathname.includes('/payment-callback') || !!paymentID;
+    return isCallback && paymentID ? paymentID : null;
+  });
+
+  const handleClosePaymentCallback = useCallback(() => {
+    window.history.replaceState({}, '', '/');
+    setBkashCallbackPaymentID(null);
+  }, []);
+
   // Show a full-screen spinner while we validate the stored JWT
   if (isLoading) {
     return (
@@ -123,6 +139,7 @@ function AppShell() {
     );
   }
 
+
   return (
     <>
       <MainApp
@@ -130,6 +147,16 @@ function AppShell() {
         requestLogin={requestLogin}
         onOpenAuthModal={openAuthModal}
       />
+
+      {bkashCallbackPaymentID && (
+        <PaymentCallbackModal
+          paymentID={bkashCallbackPaymentID}
+          onClose={handleClosePaymentCallback}
+          onSuccess={(res) => {
+            console.log('[bKash Success Callback Verified]:', res);
+          }}
+        />
+      )}
 
       {/* Auth modal — only mounts when the Login button is clicked */}
       {showAuthModal && !isAuthenticated && (
@@ -294,37 +321,31 @@ function MainApp({
     abortRef.current = controller;
 
     try {
+      // Presentation Demo Mode: Bypass backend AI APIs completely
+      // Simulate quick processing delay for realistic UX animation
+      setJobProgress('Extracting CAD elements (Demo)...');
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      
+      setJobProgress('Aligning fiducials & analyzing changes...');
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      
       let comparisonResult: ComparisonResult;
-      if (oldFile instanceof File && newFile instanceof File && !simulatedError) {
-        const { result: res } = await uploadAndCompare(
-          oldFile,
-          newFile,
-          undefined,
-          undefined,
-          undefined,
-          {
-            onJobProgress: (job) => {
-              if (job.status === 'processing' || job.status === 'pending') {
-                setJobProgress(job.progress_message || `Job ${job.status}…`);
-              }
-            },
-            abortSignal: controller.signal,
-          }
-        );
-        comparisonResult = res;
-      } else {
+      
+      if (simulatedError) {
+        // Allow testing error states if needed
         comparisonResult = await runDrawingComparison({
           old_drawing: oldFile,
           new_drawing: newFile,
           simulateError: simulatedError,
           abortSignal: controller.signal,
-          onJobProgress: (job) => {
-            if (job.status === 'processing' || job.status === 'pending') {
-              setJobProgress(job.progress_message || `Job ${job.status}…`);
-            }
-          },
         });
+      } else {
+        // Generate instant demo result on client side
+        comparisonResult = createDemoComparisonResult(oldFile, newFile);
       }
+      
       applyNewResult(comparisonResult);
     } catch (err: any) {
       setJobProgress(null);

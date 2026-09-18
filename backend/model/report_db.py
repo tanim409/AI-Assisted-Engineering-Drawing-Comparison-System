@@ -38,6 +38,29 @@ def init_db():
             except Exception:
                 pass
 
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_id VARCHAR(50) DEFAULT 'free';")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(50) DEFAULT 'inactive';")
+            except Exception:
+                pass
+
+            # Payments table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS payments (
+                    payment_id       VARCHAR(255) PRIMARY KEY,
+                    user_id          INT,
+                    user_email       VARCHAR(255),
+                    plan_id          VARCHAR(50) NOT NULL,
+                    billing_cycle    VARCHAR(50) NOT NULL,
+                    amount_cents     INT NOT NULL,
+                    currency         VARCHAR(10) NOT NULL DEFAULT 'usd',
+                    status           VARCHAR(50) NOT NULL DEFAULT 'pending',
+                    stripe_intent_id VARCHAR(255),
+                    created_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
             # Password resets table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS password_resets (

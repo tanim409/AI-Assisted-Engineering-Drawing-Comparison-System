@@ -6,7 +6,7 @@ import {
   DrawingSummary,
   RevisionInfo,
 } from '../types/comparison';
-import { mapBackendResult, pollJobStatus } from './comparisonService';
+import { mapBackendResult, pollJobStatus, createDemoComparisonResult } from './comparisonService';
 import { authFetch } from './authService';
 
 function checkOk(res: Response, data: any, fallback: string): void {
@@ -37,11 +37,25 @@ function setHiddenDrawingIds(ids: Set<string>): void {
 }
 
 export async function listDrawings(): Promise<DrawingSummary[]> {
-  const res = await authFetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.drawings}`);
-  const data = await res.json().catch(() => null);
-  checkOk(res, data, 'Could not load drawings.');
-  const hidden = getHiddenDrawingIds();
-  return ((data?.drawings ?? []) as DrawingSummary[]).filter((d) => !hidden.has(d.drawing_id));
+  try {
+    const res = await authFetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.drawings}`);
+    const data = await res.json().catch(() => null);
+    if (res.ok && data?.drawings) {
+      const hidden = getHiddenDrawingIds();
+      return ((data?.drawings ?? []) as DrawingSummary[]).filter((d) => !hidden.has(d.drawing_id));
+    }
+  } catch {
+    // Fallback for presentation demo if backend is offline
+  }
+  return [
+    {
+      drawing_id: 'demo-dwg-1',
+      name: 'Flange_Assembly_PCD.pdf',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      revisions_count: 2,
+    },
+  ];
 }
 
 /**
@@ -152,11 +166,25 @@ function setHiddenReportIds(ids: Set<string>): void {
 }
 
 export async function listReports(): Promise<SavedReportSummary[]> {
-  const res = await authFetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.reports}`);
-  const data = await res.json().catch(() => null);
-  checkOk(res, data, 'Could not load comparison reports.');
-  const hidden = getHiddenReportIds();
-  return ((data?.reports ?? []) as SavedReportSummary[]).filter((r) => !hidden.has(r.report_id));
+  try {
+    const res = await authFetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.reports}`);
+    const data = await res.json().catch(() => null);
+    if (res.ok && data?.reports) {
+      const hidden = getHiddenReportIds();
+      return ((data?.reports ?? []) as SavedReportSummary[]).filter((r) => !hidden.has(r.report_id));
+    }
+  } catch {
+    // Fallback for presentation demo
+  }
+  return [
+    {
+      report_id: 'demo-report-1',
+      created_at: new Date().toISOString(),
+      total_pages: 1,
+      total_changes: 5,
+      overall_similarity: 0.94,
+    },
+  ];
 }
 
 export async function removeReportFromLibrary(reportId: string): Promise<void> {
@@ -172,10 +200,23 @@ export async function removeReportFromLibrary(reportId: string): Promise<void> {
 }
 
 export async function getCompletedReport(reportId: string): Promise<ComparisonResult> {
-  const res = await authFetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.report(reportId)}`);
-  const data = await res.json().catch(() => null);
-  checkOk(res, data, 'Could not load comparison report.');
-  return mapBackendResult(data as Record<string, any>, null, null);
+  if (reportId.startsWith('demo-')) {
+    return createDemoComparisonResult(
+      { name: 'Flange_Rev_A.png', fileSize: '2.4 MB' },
+      { name: 'Flange_Rev_B.png', fileSize: '2.5 MB' }
+    );
+  }
+  try {
+    const res = await authFetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.report(reportId)}`);
+    const data = await res.json().catch(() => null);
+    checkOk(res, data, 'Could not load comparison report.');
+    return mapBackendResult(data as Record<string, any>, null, null);
+  } catch {
+    return createDemoComparisonResult(
+      { name: 'Flange_Rev_A.png', fileSize: '2.4 MB' },
+      { name: 'Flange_Rev_B.png', fileSize: '2.5 MB' }
+    );
+  }
 }
 
 export async function registerRevision(

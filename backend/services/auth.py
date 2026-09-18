@@ -561,6 +561,21 @@ def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depen
     return user
 
 
+def get_optional_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme)) -> Optional[Dict[str, Any]]:
+    if not credentials or not credentials.credentials:
+        return None
+    try:
+        token = credentials.credentials
+        payload = decode_access_token(token)
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+        user = get_user_by_id(int(user_id))
+        return user if user and user.get("is_active") else None
+    except Exception:
+        return None
+
+
 def get_current_user_or_query(
     request: Request,
     token: Optional[str] = Query(None),

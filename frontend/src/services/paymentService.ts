@@ -13,7 +13,7 @@ export interface PaymentPlan {
 }
 
 export interface PaymentGateway {
-  id: 'stripe' | 'bkash';
+  id: 'bkash';
   name: string;
   types: string[];
   currency: string;
@@ -24,18 +24,11 @@ export interface PaymentGateway {
 export interface CheckoutRequest {
   plan_id: string;
   billing_cycle: 'monthly' | 'annual';
-  payment_method: 'stripe' | 'bkash';
-  stripe_details?: {
-    cardholder_name: string;
-    card_number: string;
-    exp_month: string;
-    exp_year: string;
-    cvc: string;
-  };
-  bkash_details?: {
+  payment_method: 'bkash';
+  bkash_details: {
     phone_number: string;
-    otp: string;
-    pin: string;
+    otp?: string;
+    pin?: string;
   };
 }
 
@@ -46,7 +39,7 @@ export interface CheckoutResponse {
   plan_id: string;
   plan_name: string;
   billing_cycle: 'monthly' | 'annual';
-  payment_method: 'stripe' | 'bkash';
+  payment_method: 'bkash';
   amount_formatted: string;
   amount_usd: number;
   amount_bdt: number;
@@ -55,7 +48,21 @@ export interface CheckoutResponse {
   invoice_pdf_url?: string;
 }
 
-export async function processPaymentCheckout(data: CheckoutRequest): Promise<CheckoutResponse> {
+export interface BkashCreateResponse {
+  status: 'success' | 'failed';
+  paymentID: string;
+  bkashURL: string;
+  statusCode: string;
+  statusMessage: string;
+  invoiceNumber: string;
+  amount_bdt: number;
+}
+
+export async function createBkashPayment(
+  planId: string,
+  billingCycle: 'monthly' | 'annual',
+  payerReference: string = '01711111111'
+): Promise<BkashCreateResponse> {
   const token = getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -64,20 +71,47 @@ export async function processPaymentCheckout(data: CheckoutRequest): Promise<Che
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_CONFIG.baseUrl}/api/payment/checkout`, {
+  const res = await fetch(`${API_CONFIG.baseUrl}/api/bkash/create`, {
     method: 'POST',
     headers,
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      plan_id: planId,
+      billing_cycle: billingCycle,
+      payer_reference: payerReference,
+    }),
   });
 
   const resData = await res.json().catch(() => null);
-
   if (!res.ok) {
-    throw new Error(resData?.detail || resData?.message || 'Payment checkout failed. Please check details and try again.');
+    throw new Error(resData?.detail || resData?.message || 'Failed to initiate bKash payment.');
+  }
+
+  return resData as BkashCreateResponse;
+}
+
+export async function executeBkashPayment(paymentID: string): Promise<CheckoutResponse> {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_CONFIG.baseUrl}/api/bkash/execute`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ paymentID }),
+  });
+
+  const resData = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(resData?.detail || resData?.message || 'bKash payment execution & verification failed.');
   }
 
   return resData as CheckoutResponse;
 }
+
 
 export async function fetchPaymentPlans(): Promise<{ plans: PaymentPlan[]; gateways: PaymentGateway[] }> {
   try {
@@ -91,8 +125,7 @@ export async function fetchPaymentPlans(): Promise<{ plans: PaymentPlan[]; gatew
 
   return {
     gateways: [
-      { id: 'stripe', name: 'Stripe', types: ['Card', 'Apple Pay'], currency: 'USD', icon: 'stripe', active: true },
-      { id: 'bkash', name: 'bKash', types: ['MFS Direct'], currency: 'BDT', icon: 'bkash', active: true }
+      { id: 'bkash', name: 'bKash', types: ['bKash Wallet', 'MFS Direct Payment'], currency: 'BDT', icon: 'bkash', active: true }
     ],
     plans: [
       {

@@ -12,45 +12,35 @@ def test_get_payment_plans():
     assert "plans" in data
     assert len(data["plans"]) == 3
     gateway_ids = [g["id"] for g in data["gateways"]]
-    assert "stripe" in gateway_ids
     assert "bkash" in gateway_ids
+    assert "stripe" not in gateway_ids
 
-def test_stripe_checkout():
+def test_bkash_create():
     payload = {
         "plan_id": "pro",
         "billing_cycle": "monthly",
-        "payment_method": "stripe",
-        "stripe_details": {
-            "cardholder_name": "Test User",
-            "card_number": "4242 4242 4242 4242",
-            "exp_month": "12",
-            "exp_year": "28",
-            "cvc": "123"
-        }
+        "payer_reference": "01711111111"
     }
-    response = client.post("/api/payment/checkout", json=payload)
+    response = client.post("/api/bkash/create", json=payload)
     assert response.status_code == 200
     res = response.json()
     assert res["status"] == "success"
-    assert res["plan_id"] == "pro"
-    assert res["payment_method"] == "stripe"
-    assert res["transaction_id"].startswith("tx_str_")
+    assert "paymentID" in res
+    assert "bkashURL" in res
+    assert res["amount_bdt"] == 9200
 
-def test_bkash_checkout():
-    payload = {
-        "plan_id": "starter",
-        "billing_cycle": "annual",
-        "payment_method": "bkash",
-        "bkash_details": {
-            "phone_number": "01712345678",
-            "otp": "123456",
-            "pin": "12345"
-        }
-    }
-    response = client.post("/api/payment/checkout", json=payload)
-    assert response.status_code == 200
-    res = response.json()
+def test_bkash_execute():
+    # 1. First create paymentID
+    create_res = client.post("/api/bkash/create", json={"plan_id": "starter", "billing_cycle": "monthly"})
+    assert create_res.status_code == 200
+    pid = create_res.json()["paymentID"]
+
+    # 2. Execute payment (runs execute + independent status query verification)
+    exec_res = client.post("/api/bkash/execute", json={"paymentID": pid})
+    assert exec_res.status_code == 200
+    res = exec_res.json()
     assert res["status"] == "success"
-    assert res["plan_id"] == "starter"
+    assert res["paymentID"] == pid
     assert res["payment_method"] == "bkash"
-    assert res["transaction_id"].startswith("TRX")
+    assert "transaction_id" in res
+

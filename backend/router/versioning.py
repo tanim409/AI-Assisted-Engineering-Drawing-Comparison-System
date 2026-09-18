@@ -407,13 +407,16 @@ def compare_drawing_revisions(
 # ----------------------------------------------------------------- history
 
 def _build_history(drawing_id: str, owner_user_id: int) -> dict:
-    drawing = versioning_db.get_drawing(drawing_id, owner_user_id=owner_user_id)
-    if drawing is None:
+    data = versioning_db.get_drawing_history_data(drawing_id, owner_user_id=owner_user_id)
+    if data is None:
         raise HTTPException(status_code=404, detail=f"Drawing '{drawing_id}' not found or access denied")
 
-    revisions = versioning_db.list_revisions(drawing_id, owner_user_id=owner_user_id)
+    drawing = data["drawing"]
+    revisions = data["revisions"]
+    all_stored_comparisons = data["comparisons"]
+
     revisions_by_id = {r["revision_id"]: r for r in revisions}
-    all_stored_comparisons = versioning_db.list_comparisons(drawing_id, owner_user_id=owner_user_id)
+
 
     all_comparisons = []
     for c in sorted(all_stored_comparisons, key=lambda x: str(x["computed_at"]), reverse=True):
