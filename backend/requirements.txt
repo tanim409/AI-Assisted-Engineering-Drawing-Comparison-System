@@ -14,6 +14,7 @@ PyMuPDF
 rapidfuzz
 scipy
 psycopg[binary]
+psycopg-pool
 pyjwt
 passlib[bcrypt]
 email-validator
