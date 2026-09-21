@@ -24,6 +24,15 @@ const CATEGORY_STRIPE: Record<string, string> = {
   symbol_change: '#8b5cf6',
   symbol_or_code_change: '#8b5cf6',
   needs_human_review: '#eab308',
+  // Hybrid VLM pipeline categories
+  geometry_change: '#06b6d4',
+  reconfiguration: '#8b5cf6',
+  relabel: '#0ea5e9',
+  layout_change: '#6366f1',
+  structural_change: '#f97316',
+  fixture_change: '#14b8a6',
+  title_block_change: '#737373',
+  other: '#94a3b8',
 };
 
 interface RightDetailPanelProps {
@@ -75,23 +84,42 @@ export const RightDetailPanel: React.FC<RightDetailPanelProps> = ({
     return changes.filter((c) => c.category !== 'no_change');
   }, [changes]);
 
+  const allCategoriesInChanges = useMemo(() => {
+    return Array.from(new Set(activeChanges.map((c) => c.category).filter(Boolean)));
+  }, [activeChanges]);
+
+  const categoryGroupMap: Record<string, string[]> = useMemo(() => ({
+    dimension_change: ['dimension_change'],
+    note_change: ['note_change', 'note_or_annotation_change', 'relabel', 'text_change'],
+    addition: ['addition'],
+    removal: ['removal'],
+    symbol_change: ['symbol_change', 'symbol_or_code_change'],
+    reconfiguration: ['reconfiguration'],
+    geometry_change: ['geometry_change'],
+  }), []);
+
   const filteredChanges = useMemo(() => {
     if (selectedCategoryFilter === 'all') return activeChanges;
-    return activeChanges.filter((c) => c.category === selectedCategoryFilter);
-  }, [activeChanges, selectedCategoryFilter]);
+    const allowedKeys = categoryGroupMap[selectedCategoryFilter] || [selectedCategoryFilter];
+    return activeChanges.filter((c) => allowedKeys.includes(c.category));
+  }, [activeChanges, selectedCategoryFilter, categoryGroupMap]);
 
   const selectedChange = useMemo(() => {
     return activeChanges.find((c) => c.id === selectedChangeId) || null;
   }, [activeChanges, selectedChangeId]);
 
-  // Review status metrics counts
-  const approvedCount = changes.filter((c) => c.status === 'approved').length;
-  const flaggedCount = changes.filter((c) => c.status === 'flagged').length;
-  const pendingCount = changes.filter((c) => c.status === 'pending').length;
+  // Review status metrics counts — live calculation from changes for immediate UI updates
+  const confirmedCount = useMemo(() => {
+    return changes.filter((c) => c.status === 'approved').length;
+  }, [changes]);
 
-  const confirmedCount = reviewSummary?.confirmed ?? approvedCount;
-  const falsePositiveCount = reviewSummary?.false_positive ?? flaggedCount;
-  const unreviewedCount = reviewSummary?.unreviewed ?? pendingCount;
+  const falsePositiveCount = useMemo(() => {
+    return changes.filter((c) => c.status === 'flagged').length;
+  }, [changes]);
+
+  const unreviewedCount = useMemo(() => {
+    return changes.filter((c) => c.status === 'pending' || c.status === 'unreviewed' || !c.status).length;
+  }, [changes]);
 
   // Content flag: every stored llm_classification came from the rule-based
   // fallback, so no AI descriptions exist for this comparison.
@@ -111,13 +139,15 @@ export const RightDetailPanel: React.FC<RightDetailPanelProps> = ({
 
     const mainCategories = [
       { keys: ['dimension_change'], label: 'Dimension', defaultDot: 'bg-amber-500' },
-      { keys: ['note_change', 'note_or_annotation_change'], label: 'Note', defaultDot: 'bg-blue-500' },
+      { keys: ['note_change', 'note_or_annotation_change', 'relabel', 'text_change'], label: 'Note / Text', defaultDot: 'bg-blue-500' },
       { keys: ['addition'], label: 'Added', defaultDot: 'bg-emerald-500' },
       { keys: ['removal'], label: 'Removed', defaultDot: 'bg-rose-500' },
       { keys: ['symbol_change', 'symbol_or_code_change'], label: 'Symbol', defaultDot: 'bg-purple-500' },
+      { keys: ['reconfiguration'], label: 'Reconfiguration', defaultDot: 'bg-indigo-500' },
+      { keys: ['geometry_change'], label: 'Geometry', defaultDot: 'bg-teal-500' },
     ];
 
-    const resultList: Array<{ key: string; label: string; count: number; dotColor: string }> = [];
+    const resultList: Array<{ key: string; keys: string[]; label: string; count: number; dotColor: string }> = [];
     const processedKeys = new Set<string>();
 
     mainCategories.forEach((cat) => {
@@ -126,21 +156,25 @@ export const RightDetailPanel: React.FC<RightDetailPanelProps> = ({
         count += counts[k] || 0;
         processedKeys.add(k);
       });
-      const config = getCategoryConfig(cat.keys[0]);
-      resultList.push({
-        key: cat.keys[0],
-        label: cat.label,
-        count,
-        dotColor: config.dotColor || cat.defaultDot,
-      });
+      if (count > 0) {
+        const config = getCategoryConfig(cat.keys[0]);
+        resultList.push({
+          key: cat.keys[0],
+          keys: cat.keys,
+          label: cat.label,
+          count,
+          dotColor: config.dotColor || cat.defaultDot,
+        });
+      }
     });
 
     // Catch any other categories present in counts
     Object.keys(counts).forEach((k) => {
-      if (!processedKeys.has(k)) {
+      if (!processedKeys.has(k) && counts[k] > 0) {
         const config = getCategoryConfig(k);
         resultList.push({
           key: k,
+          keys: [k],
           label: config.shortLabel || config.label,
           count: counts[k],
           dotColor: config.dotColor,
@@ -284,15 +318,35 @@ export const RightDetailPanel: React.FC<RightDetailPanelProps> = ({
             <div className="m-3 rounded-[10px] border border-cyprus/15 bg-white p-4 space-y-2.5 shrink-0 max-h-[48%] overflow-y-auto">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-[13px] px-2 py-0.5 rounded-[6px] bg-[#0A0A0A] text-white">
-                      {selectedChange.id}
+                {/* ID + Zone header */}
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-bold text-[13px] px-2 py-0.5 rounded-[6px] bg-[#0A0A0A] text-white">
+                    {selectedChange.id}
+                  </span>
+                  <span className="font-mono text-xs text-[#4b5563]">
+                    {selectedChange.location || selectedChange.zone ? `📍 ${selectedChange.location || selectedChange.zone}` : ''}
+                  </span>
+                </div>
+                {/* Source + Confidence badges */}
+                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                  {selectedChange.source === 'visual' || selectedChange.confidence_tier === 'needs_review' ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                      ⚠ Visual (Track B) · Needs Review
                     </span>
-                    <span className="font-mono text-xs text-[#4b5563]">Zone {selectedChange.zone}</span>
-                  </div>
-                  <h4 className="mt-1 text-sm font-bold text-[#0A0A0A] leading-tight">
-                    {selectedChange.affectedFeature || selectedChange.title || selectedChange.category}
-                  </h4>
+                  ) : selectedChange.source === 'extraction' || selectedChange.confidence_tier === 'high' ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-300">
+                      ✓ Extraction (Track A) · High Confidence
+                    </span>
+                  ) : null}
+                  {selectedChange.entity_name && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                      {selectedChange.entity_name}
+                    </span>
+                  )}
+                </div>
+                <h4 className="mt-1.5 text-sm font-bold text-[#0A0A0A] leading-tight">
+                  {selectedChange.affectedFeature || selectedChange.title || selectedChange.category}
+                </h4>
                 </div>
 
                 <span className="inline-flex items-center gap-1.5 shrink-0">
@@ -383,14 +437,18 @@ export const RightDetailPanel: React.FC<RightDetailPanelProps> = ({
               <select
                 value={selectedCategoryFilter}
                 onChange={(e) => onCategoryFilterChange(e.target.value)}
-                className="text-xs bg-white border border-[#E5E5E5] rounded-[4px] px-1.5 py-0.5 text-[#0A0A0A] focus:outline-none cursor-pointer"
+                className="text-xs bg-white border border-[#E5E5E5] rounded-[4px] px-1.5 py-0.5 text-[#0A0A0A] focus:outline-none cursor-pointer font-medium"
               >
-                <option value="all">All categories</option>
-                <option value="dimension_change">Dimension</option>
-                <option value="addition">Addition</option>
-                <option value="removal">Removal</option>
-                <option value="text_change">Text</option>
-                <option value="symbol_change">Symbol</option>
+                <option value="all">All categories ({activeChanges.length})</option>
+                {allCategoriesInChanges.map((catKey) => {
+                  const config = getCategoryConfig(catKey);
+                  const count = activeChanges.filter((c) => c.category === catKey).length;
+                  return (
+                    <option key={catKey} value={catKey}>
+                      {config.shortLabel || config.label} ({count})
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
@@ -435,6 +493,12 @@ export const RightDetailPanel: React.FC<RightDetailPanelProps> = ({
                     <div className="flex items-center gap-1">
                       {item.status === 'approved' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
                       {item.status === 'flagged' && <Flag className="w-3.5 h-3.5 text-rose-600" />}
+                      {/* Source indicator dot */}
+                      {(item.source === 'visual' || item.confidence_tier === 'needs_review') ? (
+                        <span className="text-[9px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded px-0.5">⚠B</span>
+                      ) : (item.source === 'extraction' || item.confidence_tier === 'high') ? (
+                        <span className="text-[9px] font-bold text-teal-700 bg-teal-100 border border-teal-300 rounded px-0.5">A</span>
+                      ) : null}
                       <span className={`w-2 h-2 rounded-full ${config.dotColor}`} />
                     </div>
                   </div>
@@ -516,21 +580,45 @@ export const RightDetailPanel: React.FC<RightDetailPanelProps> = ({
 
           {/* Category Breakdown */}
           <div className="bg-white rounded-[10px] p-4 border border-[#E5E5E5] shadow-xs space-y-3">
-            <span className="text-xs font-semibold text-[#525252] block">
-              Category breakdown
-            </span>
-            <div className="space-y-2">
-              {categoryBreakdown.map(({ key, label, count, dotColor }) => (
-                <div key={key} className="flex items-center justify-between text-xs py-1.5 border-b border-[#F5F5F5] last:border-0">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${dotColor}`} />
-                    <span className="font-medium text-[#262626]">{label}</span>
-                  </div>
-                  <span className="font-mono font-bold text-[#0A0A0A] px-2 py-0.5 rounded-[4px] bg-[#FAFAFA] border border-[#E5E5E5]">
-                    {count}
-                  </span>
-                </div>
-              ))}
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-[#525252]">
+                Category breakdown
+              </span>
+              <span className="text-[11px] text-[#737373]">
+                Click to filter changes
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {categoryBreakdown.map(({ key, keys, label, count, dotColor }) => {
+                const isSelected = selectedCategoryFilter === key || keys.includes(selectedCategoryFilter);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => {
+                      if (selectedCategoryFilter === key) {
+                        onCategoryFilterChange('all');
+                      } else {
+                        onCategoryFilterChange(key);
+                      }
+                      handleTabChange('changes');
+                    }}
+                    className={`w-full flex items-center justify-between text-xs py-2 px-2.5 rounded-[8px] border transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-amber-50/80 border-amber-300 shadow-2xs font-semibold'
+                        : 'bg-[#FAFAFA] border-[#F0F0F0] hover:bg-[#F5F5F5] hover:border-[#E5E5E5]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2.5 h-2.5 rounded-full ${dotColor}`} />
+                      <span className="text-[#262626]">{label}</span>
+                    </div>
+                    <span className="font-mono font-bold text-[#0A0A0A] px-2 py-0.5 rounded-[4px] bg-white border border-[#E5E5E5]">
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

@@ -246,12 +246,11 @@ export const ReportTable: React.FC<ReportTableProps> = ({
 
   const approvedCount = changes.filter((c) => c.status === 'approved').length;
   const flaggedCount = changes.filter((c) => c.status === 'flagged').length;
-  const pendingCount = changes.filter((c) => c.status === 'pending').length;
+  const pendingCount = changes.filter((c) => c.status === 'pending' || c.status === 'unreviewed' || !c.status).length;
 
-  // Backend-persisted counts win when the summary has loaded; otherwise local state.
-  const confirmedCount = reviewSummary?.confirmed ?? approvedCount;
-  const falsePositiveCount = reviewSummary?.false_positive ?? flaggedCount;
-  const unreviewedCount = reviewSummary?.unreviewed ?? pendingCount;
+  const confirmedCount = approvedCount;
+  const falsePositiveCount = flaggedCount;
+  const unreviewedCount = pendingCount;
 
   // Resolve summary unreviewed_changes (page_number/change_index) to row ids for highlighting.
   const unreviewedIds = useMemo(() => {

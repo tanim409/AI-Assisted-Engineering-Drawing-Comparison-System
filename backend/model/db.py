@@ -1,10 +1,10 @@
-"""PostgreSQL connection helpers."""
 import os
 from contextlib import contextmanager
 
 import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,18 +15,9 @@ POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
 POSTGRES_DATABASE = os.getenv("POSTGRES_DATABASE", "engineering_drawings")
 
-
-def _connection_kwargs(database: str) -> dict:
-    return {
-        "host": POSTGRES_HOST,
-        "port": POSTGRES_PORT,
-        "user": POSTGRES_USER,
-        "password": POSTGRES_PASSWORD,
-        "dbname": database,
-    }
-
-
 _db_checked = False
+_pool: ConnectionPool = None
+
 
 def ensure_database_exists():
     """Create the configured PostgreSQL database when it is missing (local dev only)."""
@@ -35,7 +26,8 @@ def ensure_database_exists():
         return
     _db_checked = True
     try:
-        with psycopg.connect(**_connection_kwargs("postgres"), autocommit=True) as conn:
+        conninfo = f"host={POSTGRES_HOST} port={POSTGRES_PORT} user={POSTGRES_USER} password={POSTGRES_PASSWORD} dbname=postgres"
+        with psycopg.connect(conninfo, autocommit=True) as conn:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (POSTGRES_DATABASE,))
                 if not cursor.fetchone():
@@ -45,22 +37,33 @@ def ensure_database_exists():
         pass
 
 
-def get_raw_connection():
-    if not _db_checked:
+def get_pool() -> ConnectionPool:
+    global _pool
+    if _pool is None:
         ensure_database_exists()
-    return psycopg.connect(**_connection_kwargs(POSTGRES_DATABASE), row_factory=dict_row)
+        conninfo = f"host={POSTGRES_HOST} port={POSTGRES_PORT} user={POSTGRES_USER} password={POSTGRES_PASSWORD} dbname={POSTGRES_DATABASE}"
+        _pool = ConnectionPool(
+            conninfo=conninfo,
+            min_size=1,
+            max_size=20,
+            open=True,
+            kwargs={"row_factory": dict_row},
+        )
+    return _pool
 
+
+def get_raw_connection():
+    return get_pool().getconn()
 
 
 @contextmanager
 def connect():
-    """Yield a PostgreSQL connection and commit or roll back its transaction."""
-    conn = get_raw_connection()
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+    """Yield a pooled PostgreSQL connection and commit or roll back its transaction."""
+    pool = get_pool()
+    with pool.connection() as conn:
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise

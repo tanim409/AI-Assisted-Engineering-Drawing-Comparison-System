@@ -21,9 +21,10 @@ interface UploadZoneProps {
     newFile: Partial<DrawingFile> | File,
     simulatedError?: '422_ALIGNMENT_FAILED' | '500_SERVER_ERROR' | 'NETWORK_TIMEOUT' | null
   ) => void;
+  isComparing?: boolean;
 }
 
-export const UploadZone: React.FC<UploadZoneProps> = ({ onStartComparison }) => {
+export const UploadZone: React.FC<UploadZoneProps> = ({ onStartComparison, isComparing = false }) => {
   const [oldDrawing, setOldDrawing] = useState<Partial<DrawingFile> | null>(null);
   const [newDrawing, setNewDrawing] = useState<Partial<DrawingFile> | null>(null);
   const [oldFileObj, setOldFileObj] = useState<File | null>(null);
@@ -95,36 +96,12 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onStartComparison }) => 
     }
   };
 
-  // Presentation / Demo Mode: Keep button clickable even if files aren't selected yet
-  const isReadyToCompare = true;
+  // Button is only clickable when user has put both images and AI is not currently running
+  const isReadyToCompare = Boolean(oldFileObj && newFileObj && !isComparing);
 
   const handleExecuteComparison = () => {
-    const baselineObj = oldDrawing || {
-      id: 'demo-baseline',
-      name: 'Baseline_RevA.pdf',
-      revision: 'Rev A (Baseline)',
-      fileSize: '2.4 MB',
-      dimensions: 'Auto-detecting (Vector/CAD)',
-      type: 'pdf',
-      uploadedAt: new Date().toLocaleTimeString(),
-      author: 'Uploaded by Client',
-    };
-    
-    const incomingObj = newDrawing || {
-      id: 'demo-incoming',
-      name: 'Revised_RevB.pdf',
-      revision: 'Rev B (Incoming)',
-      fileSize: '2.6 MB',
-      dimensions: 'Auto-detecting (Vector/CAD)',
-      type: 'pdf',
-      uploadedAt: new Date().toLocaleTimeString(),
-      author: 'Uploaded by Client',
-    };
-
-    if (oldFileObj && newFileObj) {
+    if (oldFileObj && newFileObj && !isComparing) {
       onStartComparison(oldFileObj, newFileObj, selectedErrorSimulation);
-    } else {
-      onStartComparison(baselineObj, incomingObj, selectedErrorSimulation);
     }
   };
 
@@ -363,8 +340,10 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onStartComparison }) => 
       {/* Main Action Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between border-t border-[#E5E5E5] pt-6 gap-4">
         <div className="text-xs text-[#525252] font-medium text-center sm:text-left">
-          {isReadyToCompare
-            ? 'Both drawing revisions verified and ready for geometric alignment.'
+          {isComparing
+            ? 'Processing comparison via AI engine...'
+            : isReadyToCompare
+            ? 'Both drawing revisions verified and ready for VLM comparison.'
             : 'Select or upload both drawing revisions to proceed.'}
         </div>
 
@@ -379,7 +358,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onStartComparison }) => 
               : 'bg-[#E5E5E5] text-[#525252] cursor-not-allowed'
           }`}
         >
-          <span>Align & Compare Drawings</span>
+          <span>Compare Drawings</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>
@@ -393,9 +372,9 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onStartComparison }) => 
           </p>
         </div>
         <div className="bg-white border border-[#E5E5E5] rounded-[10px] p-4">
-          <p className="text-xs font-bold text-[#0A0A0A] uppercase tracking-wider">Auto alignment</p>
+          <p className="text-xs font-bold text-[#0A0A0A] uppercase tracking-wider">Hybrid VLM Engine</p>
           <p className="mt-1 text-[13px] text-[#525252] leading-relaxed">
-            Scans are deskewed and registered automatically — no manual prep needed.
+            Track A inventory extraction & Track B visual diff — automated end-to-end.
           </p>
         </div>
         <div className="bg-white border border-[#E5E5E5] rounded-[10px] p-4">

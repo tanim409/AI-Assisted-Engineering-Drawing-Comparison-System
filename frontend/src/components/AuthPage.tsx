@@ -4,7 +4,7 @@
  */
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { apiRegister, apiResendVerification } from '../services/authService';
+import { apiRegister } from '../services/authService';
 import { Mail, CheckCircle2, AlertCircle, RefreshCw, Loader2, ArrowRight } from 'lucide-react';
 
 interface AuthPageProps {
@@ -102,9 +102,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab 
   const [regLoading, setRegLoading] = useState(false);
   const [showRegPass, setShowRegPass] = useState(false);
 
-  // ── Forgot Password view ─────────────────────────────────────────────────
-  const [showForgot, setShowForgot] = useState(false);
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -150,19 +147,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab 
 
   const isModal = !!onClose;
 
-  if (showForgot) {
-    const forgotPanel = (
-      <div className="relative w-full max-w-md">
-        <ForgotPasswordPanel onBack={() => setShowForgot(false)} />
-      </div>
-    );
-    if (isModal) return forgotPanel;
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-[#0A0A0A] via-[#111111] to-[#1a1a2e] flex items-center justify-center px-4">
-        {forgotPanel}
-      </div>
-    );
-  }
+
 
   // Card content — shared between standalone and modal renders
   const card = (
@@ -187,8 +172,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab 
                 onClick={() => {
                   setTab(t);
                   setLoginError('');
-                  setIsUnverifiedError(false);
-                  setLoginResendSuccess(false);
                   setRegError('');
                 }}
                 className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all duration-200 cursor-pointer
@@ -300,15 +283,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticated, initialTab 
                   transition-all duration-200 active:scale-[0.98]"
               >
                 {loginLoading ? 'Signing in…' : 'Sign In'}
-              </button>
-
-              <button
-                type="button"
-                id="btn-forgot-password"
-                onClick={() => setShowForgot(true)}
-                className="w-full text-white/40 hover:text-white/70 text-xs py-1 transition-colors cursor-pointer"
-              >
-                Forgot your password?
               </button>
             </form>
           </div>
@@ -459,142 +433,4 @@ function getPasswordScore(p: string): number {
   return Math.min(4, score);
 }
 
-// ─── Forgot Password Panel ────────────────────────────────────────────────────
 
-import { apiRequestPasswordReset, apiResetPassword } from '../services/authService';
-
-function ForgotPasswordPanel({ onBack }: { onBack: () => void }) {
-  const [step, setStep] = useState<'request' | 'reset' | 'done'>('request');
-  const [email, setEmail] = useState('');
-  const [token, setToken] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [info, setInfo] = useState('');
-
-  const handleRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    try {
-      await apiRequestPasswordReset(email);
-      setInfo('If an account exists, a reset token has been sent to your email.');
-      setStep('reset');
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleReset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    if (newPassword !== confirm) { setError('Passwords do not match'); return; }
-    setLoading(true);
-    try {
-      await apiResetPassword(token, newPassword);
-      setStep('done');
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="bg-white/5 border border-white/10 rounded-2xl backdrop-blur-md p-8 shadow-2xl">
-      <button onClick={onBack} className="text-white/40 hover:text-white/70 text-sm mb-6 flex items-center gap-2 transition-colors">
-        ← Back to Sign In
-      </button>
-
-      {step === 'request' && (
-        <>
-          <h2 className="text-white text-lg font-semibold mb-1">Reset your password</h2>
-          <p className="text-white/40 text-sm mb-6">Enter your account email and we'll send a reset token.</p>
-          <form onSubmit={handleRequest} className="space-y-4">
-            <input
-              id="forgot-email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="engineer@company.com"
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 transition-all"
-            />
-            {error && <p className="text-red-400 text-sm">{error}</p>}
-            <button
-              id="btn-forgot-submit"
-              type="submit"
-              disabled={loading}
-              className="w-full bg-white text-[#0A0A0A] font-semibold py-3 rounded-xl text-sm hover:bg-white/90 disabled:opacity-50 transition-all cursor-pointer"
-            >
-              {loading ? 'Sending…' : 'Send Reset Token'}
-            </button>
-          </form>
-        </>
-      )}
-
-      {step === 'reset' && (
-        <>
-          <h2 className="text-white text-lg font-semibold mb-1">Enter new password</h2>
-          {info && <p className="text-emerald-400 text-sm mb-4">{info}</p>}
-          <form onSubmit={handleReset} className="space-y-4">
-            <input
-              id="reset-token"
-              type="text"
-              required
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="Paste your reset token here"
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 transition-all font-mono"
-            />
-            <input
-              id="reset-new-password"
-              type="password"
-              required
-              minLength={6}
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="New password"
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 transition-all"
-            />
-            <input
-              id="reset-confirm-password"
-              type="password"
-              required
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              placeholder="Confirm new password"
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-white/20 focus:outline-none focus:border-white/30 transition-all"
-            />
-            {error && <p className="text-red-400 text-sm">{error}</p>}
-            <button
-              id="btn-reset-submit"
-              type="submit"
-              disabled={loading}
-              className="w-full bg-white text-[#0A0A0A] font-semibold py-3 rounded-xl text-sm hover:bg-white/90 disabled:opacity-50 transition-all cursor-pointer"
-            >
-              {loading ? 'Resetting…' : 'Reset Password'}
-            </button>
-          </form>
-        </>
-      )}
-
-      {step === 'done' && (
-        <div className="text-center py-4">
-          <div className="text-4xl mb-4">✅</div>
-          <h2 className="text-white text-lg font-semibold mb-2">Password updated!</h2>
-          <p className="text-white/40 text-sm mb-6">You can now sign in with your new password.</p>
-          <button
-            onClick={onBack}
-            className="bg-white text-[#0A0A0A] font-semibold py-3 px-8 rounded-xl text-sm hover:bg-white/90 transition-all cursor-pointer"
-          >
-            Sign In
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}

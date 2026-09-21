@@ -116,28 +116,6 @@ export async function apiGetMe(): Promise<AuthUser> {
   return data as AuthUser;
 }
 
-export async function apiRequestPasswordReset(email: string): Promise<void> {
-  const res = await fetch(`${AUTH_BASE}/request-password-reset`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
-  });
-  if (!res.ok) {
-    const d = await res.json().catch(() => ({}));
-    throw new Error(d?.detail || 'Could not send reset email');
-  }
-}
-
-export async function apiResetPassword(token: string, new_password: string): Promise<void> {
-  const res = await fetch(`${AUTH_BASE}/reset-password`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token, new_password }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.detail || 'Password reset failed');
-}
-
 export async function apiDeleteAccount(): Promise<void> {
   const res = await authFetch(`${AUTH_BASE}/me`, { method: 'DELETE' });
   const data = await res.json().catch(() => ({}));

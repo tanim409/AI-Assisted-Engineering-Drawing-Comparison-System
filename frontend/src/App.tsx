@@ -14,7 +14,7 @@ import {
   ChangeReviewStatus,
   ChangeItem,
 } from './types/comparison';
-import { runDrawingComparison, createDemoComparisonResult } from './services/comparisonService';
+import { runDrawingComparison } from './services/comparisonService';
 import { uploadAndCompare } from './services/drawingService';
 import { fetchReviewsSummary, submitChangeReview } from './services/reviewService';
 import { ReviewSummary } from './types/comparison';
@@ -22,7 +22,6 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AuthPage } from './components/AuthPage';
 import { AuthToast } from './components/AuthToast';
 import { Header } from './components/Header';
-import { ResetPasswordPage } from './components/ResetPasswordPage';
 import { LandingPage } from './components/LandingPage';
 import { UploadZone } from './components/UploadZone';
 import { ComparisonSkeleton } from './components/ComparisonSkeleton';
@@ -37,15 +36,18 @@ import { RightDetailPanel } from './components/RightDetailPanel';
 import { NavigationToolbar } from './components/NavigationToolbar';
 import { PaymentCallbackModal } from './components/PaymentCallbackModal';
 import { CheckoutResponse } from './services/paymentService';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 
 // ─── Root with AuthProvider ───────────────────────────────────────────────────
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppShell />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
@@ -84,15 +86,6 @@ function AppShell() {
   const dismissToast = useCallback(() =>
     setAuthToast((prev) => ({ ...prev, visible: false })), []);
 
-  // Public route detection for email links (/verify-email?token=... & /reset-password?token=...)
-  const [publicRoute, setPublicRoute] = useState<'verify-email' | 'reset-password' | null>(() => {
-    const pathname = window.location.pathname;
-    const search = window.location.search;
-    if (pathname.includes('/verify-email') || (search.includes('token=') && pathname.includes('verify'))) return 'verify-email';
-    if (pathname.includes('/reset-password') || (search.includes('token=') && pathname.includes('reset'))) return 'reset-password';
-    return null;
-  });
-
   // bKash callback route detection (/payment-callback?paymentID=...&status=...)
   const [bkashCallbackPaymentID, setBkashCallbackPaymentID] = useState<string | null>(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -115,27 +108,6 @@ function AppShell() {
           <p className="text-white/40 text-sm">Verifying session…</p>
         </div>
       </div>
-    );
-  }
-
-  const searchParams = new URLSearchParams(window.location.search);
-  const tokenParam = searchParams.get('token') || '';
-
-  if (publicRoute === 'verify-email' || window.location.pathname.includes('/verify-email')) {
-    window.history.replaceState({}, '', '/');
-    setPublicRoute(null);
-  }
-
-  if (publicRoute === 'reset-password' || window.location.pathname.includes('/reset-password')) {
-    return (
-      <ResetPasswordPage
-        token={tokenParam}
-        onOpenLogin={() => {
-          window.history.replaceState({}, '', '/');
-          setPublicRoute(null);
-          openAuthModal('login');
-        }}
-      />
     );
   }
 
@@ -321,31 +293,28 @@ function MainApp({
     abortRef.current = controller;
 
     try {
-      // Presentation Demo Mode: Bypass backend AI APIs completely
-      // Simulate quick processing delay for realistic UX animation
-      setJobProgress('Extracting CAD elements (Demo)...');
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      
-      setJobProgress('Aligning fiducials & analyzing changes...');
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      
+      setJobProgress('Queued — sending drawings to AI backend...');
       let comparisonResult: ComparisonResult;
-      
-      if (simulatedError) {
-        // Allow testing error states if needed
+      if (!simulatedError && oldFile instanceof File && newFile instanceof File) {
+        const res = await uploadAndCompare(oldFile, newFile, undefined, undefined, undefined, {
+          onJobProgress: (job) => {
+            if (job.progress_message) setJobProgress(job.progress_message);
+          },
+          abortSignal: controller.signal,
+        });
+        comparisonResult = res.result;
+      } else {
         comparisonResult = await runDrawingComparison({
           old_drawing: oldFile,
           new_drawing: newFile,
           simulateError: simulatedError,
+          onJobProgress: (job) => {
+            if (job.progress_message) setJobProgress(job.progress_message);
+          },
           abortSignal: controller.signal,
         });
-      } else {
-        // Generate instant demo result on client side
-        comparisonResult = createDemoComparisonResult(oldFile, newFile);
       }
-      
+
       applyNewResult(comparisonResult);
     } catch (err: any) {
       setJobProgress(null);
@@ -448,29 +417,53 @@ function MainApp({
   const handleStatusChange = async (changeId: string, status: ChangeReviewStatus) => {
     if (!result) return;
     const target = result.changes.find((c) => c.id === changeId);
+    if (!target) return;
+
+    // Toggle status: if clicking the current status again, revert to 'pending'
+    const newStatus: ChangeReviewStatus = target.status === status ? 'pending' : status;
+
     if (
-      target?.reportId != null &&
-      target?.pageNumber != null &&
-      target?.changeIndex != null &&
-      (status === 'approved' || status === 'flagged')
+      target.reportId != null &&
+      target.pageNumber != null &&
+      target.changeIndex != null &&
+      (newStatus === 'approved' || newStatus === 'flagged' || newStatus === 'pending')
     ) {
       try {
-        await submitChangeReview(target.reportId, target.pageNumber, target.changeIndex, status);
+        await submitChangeReview(target.reportId, target.pageNumber, target.changeIndex, newStatus);
         await refreshReviewSummary(target.reportId);
       } catch {
         // Persist failed — keep the optimistic local update.
       }
     }
+
     setResult((prev) => {
       if (!prev) return null;
+      const updatedChanges = prev.changes.map((c) =>
+        c.id === changeId ? { ...c, status: newStatus } : c
+      );
+
+      const confirmed = updatedChanges.filter((c) => c.status === 'approved').length;
+      const false_positive = updatedChanges.filter((c) => c.status === 'flagged').length;
+      const unreviewed = updatedChanges.filter(
+        (c) => c.status === 'pending' || c.status === 'unreviewed' || !c.status
+      ).length;
+
+      setReviewSummary((oldSummary) => ({
+        report_id: oldSummary?.report_id || target.reportId || '',
+        total_changes: updatedChanges.length,
+        confirmed,
+        false_positive,
+        unreviewed,
+        unreviewed_changes: oldSummary?.unreviewed_changes || [],
+      }));
+
       return {
         ...prev,
-        changes: prev.changes.map((c) =>
-          c.id === changeId ? { ...c, status } : c
-        ),
+        changes: updatedChanges,
       };
     });
-    setDetailChange((prev) => (prev && prev.id === changeId ? { ...prev, status } : prev));
+
+    setDetailChange((prev) => (prev && prev.id === changeId ? { ...prev, status: newStatus } : prev));
   };
 
   const handleLogout = useCallback(() => {
@@ -547,7 +540,7 @@ function MainApp({
           <>
             {/* State 1: Upload Screen */}
             {asyncState === 'idle' && (
-              <UploadZone onStartComparison={handleStartComparison} />
+              <UploadZone onStartComparison={handleStartComparison} isComparing={asyncState === 'loading'} />
             )}
 
             {/* State 2: Processing Skeleton Screen */}

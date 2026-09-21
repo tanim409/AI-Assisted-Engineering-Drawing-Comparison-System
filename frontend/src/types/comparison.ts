@@ -3,7 +3,7 @@ export type ChangeCategory = string;
 
 export type ChangeSeverity = 'critical' | 'moderate' | 'minor' | 'info';
 
-export type ChangeReviewStatus = 'pending' | 'approved' | 'flagged' | 'rejected';
+export type ChangeReviewStatus = 'pending' | 'approved' | 'flagged' | 'unreviewed';
 
 export interface ChangeRegion {
   x: number;      // % percentage from left (0 - 100)
@@ -46,6 +46,16 @@ export interface ChangeItem {
   ruleBasedCategory?: string;
   /** Backend llm_classification source: model name, or "fallback" when the VLM call failed. */
   llmSource?: string | null;
+
+  // ── Hybrid VLM pipeline fields (pipeline_version = 'hybrid_v1') ──
+  /** Which track produced this change: 'extraction' (Track A) or 'visual' (Track B). */
+  source?: 'extraction' | 'visual';
+  /** Confidence tier: 'high' for Track A, 'needs_review' for Track B. */
+  confidence_tier?: 'high' | 'needs_review';
+  /** Free-text location description from VLM (replaces pixel bbox for new reports). */
+  location?: string;
+  /** Entity name from Track A inventory extraction. */
+  entity_name?: string;
 }
 
 export interface DrawingFile {
@@ -92,6 +102,12 @@ export interface ComparisonResult {
   reportId?: string;
   /** Number of pages in the compared document. */
   totalPages?: number;
+  /** Pipeline version: 'hybrid_v1' for new VLM-only pipeline, 'legacy' for old CV pipeline. */
+  pipelineVersion?: string;
+  /** Number of Track A (high-confidence extraction) changes. */
+  trackACount?: number;
+  /** Number of Track B (needs-review visual) changes. */
+  trackBCount?: number;
 }
 
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
@@ -108,6 +124,7 @@ export interface DrawingSummary {
   drawing_id: string;
   name: string;
   created_at: string;
+  updated_at?: string;
   revision_count?: number;
 }
 

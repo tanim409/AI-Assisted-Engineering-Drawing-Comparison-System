@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 import datetime
@@ -10,6 +11,7 @@ from model.db import connect
 from services.auth import get_optional_current_user
 from services.bkash_service import bkash_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 PLAN_PRICES = {
@@ -129,10 +131,20 @@ def execute_bkash_payment(
     plan_id = payment_record.get("plan_id", "pro") if payment_record else "pro"
     billing_cycle = payment_record.get("billing_cycle", "monthly") if payment_record else "monthly"
 
+    if payment_record and payment_record.get("status") == "succeeded":
+        raise HTTPException(status_code=400, detail="This payment has already been processed and fulfilled.")
+
     try:
         # Independently verify via bKash execute + status query endpoint
         verification = bkash_service.verify_and_execute_checkout(payment_id)
         trx_id = verification["trxID"]
+
+        # Verify payment amount against stored expected amount
+        if payment_record and payment_record.get("amount_cents"):
+            expected_amount_bdt = payment_record["amount_cents"] / 100.0
+            returned_amount = float(verification.get("amount") or expected_amount_bdt)
+            if abs(returned_amount - expected_amount_bdt) > 1.0:
+                raise HTTPException(status_code=400, detail="Payment amount mismatch between gateway and plan price.")
 
         # Update DB payments record to succeeded
         with connect() as conn:
@@ -166,7 +178,7 @@ def execute_bkash_payment(
             "invoice_pdf_url": f"/api/payment/invoice/{trx_id}",
         }
     except Exception as e:
-        print(f"[bKash Verification Error]: {e}")
+        logger.error(f"[bKash Verification Error]: {e}")
         with connect() as conn:
             with conn.cursor() as cursor:
                 cursor.execute("""

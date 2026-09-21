@@ -26,6 +26,9 @@ import {
   removeReportFromLibrary,
   removeRevisionFromLibrary,
   renameDrawing,
+  uploadAndCompare,
+  getReportSummary,
+  PaginatedDrawingsResponse,
   SavedReportSummary,
 } from '../services/drawingService';
 import { runDrawingComparison } from '../services/comparisonService';
@@ -80,25 +83,29 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
   const [quickError, setQuickError] = useState<string | null>(null);
   const quickAbortRef = useRef<AbortController | null>(null);
 
+  // Cache for report summaries (lightweight) — avoids re-fetching on tab switch
+  const [reportSummariesCache, setReportSummariesCache] = useState<Record<string, any>>({});
+
   // New-drawing tile expansion state
   const [creating, setCreating] = useState(false);
 
   // Open overflow menu ("...") per drawing card (only one at a time)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  // Per-drawing status details (updated-at + pending pair counts), loaded
-  // lazily so the grid renders immediately and badges fill in when ready.
-  const [drawingDetails, setDrawingDetails] = useState<
-    Record<string, { updatedAt?: string; pending: number; totalPairs: number }>
-  >({});
-
   const refreshDrawings = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [dList, rList] = await Promise.all([listDrawings(), listReports()]);
-      setDrawings(dList);
-      setReports(rList);
+      const [dResult, rResult] = await Promise.allSettled([listDrawings(50, 0), listReports()]);
+      if (dResult.status === 'fulfilled') {
+        setDrawings(dResult.value.drawings);
+      }
+      if (rResult.status === 'fulfilled') {
+        setReports(rResult.value);
+      }
+      if (dResult.status === 'rejected' && rResult.status === 'rejected') {
+        setError('Could not load drawings or reports.');
+      }
     } catch (err: any) {
       setError(err?.message || 'Could not load drawings or reports.');
     } finally {
@@ -109,53 +116,59 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
   useEffect(() => {
     refreshDrawings();
   }, [refreshDrawings]);
-
-  useEffect(() => {
-    if (drawings.length === 0) return;
-    let cancelled = false;
-    // Only fetch details for drawings not already in drawingDetails map
-    const missingDrawings = drawings.filter((d) => !drawingDetails[d.drawing_id]);
-    if (missingDrawings.length === 0) return;
-
-    Promise.allSettled(
-      missingDrawings.map(async (d) => {
-        const h = await getDrawingHistory(d.drawing_id);
-        const pairs = h.consecutive_pairs ?? [];
-        const revs = [...(h.revisions ?? [])].sort((a, b) => a.sequence_number - b.sequence_number);
-        return {
-          id: d.drawing_id,
-          updatedAt: revs.length > 0 ? revs[revs.length - 1].uploaded_at : undefined,
-          pending: pairs.filter((p) => !p.has_comparison).length,
-          totalPairs: pairs.length,
-        };
-      })
-    ).then((results) => {
-      if (cancelled) return;
-      setDrawingDetails((prev) => {
-        const next = { ...prev };
-        results.forEach((r) => {
-          if (r.status === 'fulfilled' && r.value) next[r.value.id] = r.value;
-        });
-        return next;
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [drawings, drawingDetails]);
-
   const handleOpenReport = async (reportId: string) => {
     setBusy(true);
     setJobMessage('Loading comparison report…');
     try {
-      const result = await getCompletedReport(reportId);
+      // First, fetch the lightweight summary (no page images, no full change data)
+      const summaryResult = await getReportSummary(reportId);
       setJobMessage(null);
-      onLoadComparison(result);
+      
+      // Build a minimal ComparisonResult from summary data for immediate display
+      const comparisonResult: ComparisonResult = {
+        id: summaryResult.report_id || reportId,
+        reportId: reportId,
+        totalPages: summaryResult.total_pages,
+        projectName: 'Drawing Comparison',
+        drawingNumber: '',
+        title: 'Engineering Drawing Comparison',
+        discipline: 'Architectural',
+        oldDrawing: { id: 'A', name: 'Old Drawing', revision: 'A', fileSize: '', dimensions: '', type: '', uploadedAt: '' },
+        newDrawing: { id: 'B', name: 'New Drawing', revision: 'B', fileSize: '', dimensions: '', type: '', uploadedAt: '' },
+        alignmentScore: Math.round((summaryResult.overall_similarity || 1.0) * 100),
+        alignmentConfidence: 'medium',
+        processingTimeMs: 0,
+        totalChanges: summaryResult.total_changes || 0,
+        categoryCounts: {},
+        overallSimilarity: summaryResult.overall_similarity || 1.0,
+        totalRegionsDetected: summaryResult.total_changes || 0,
+        changes: [],
+        timestamp: summaryResult.created_at || new Date().toISOString(),
+        oldDrawingUrl: undefined,
+        newDrawingUrl: undefined,
+        pipelineVersion: 'hybrid_v1',
+      };
+      
+      onLoadComparison(comparisonResult);
+      
+      // Then fetch the full report in the background (for detailed view)
+      void fetchFullReportInBackground(reportId);
     } catch (err: any) {
       setJobMessage(null);
       setError(err?.message || 'Could not load comparison report.');
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Background fetch of the full report with all images and changes
+  const fetchFullReportInBackground = async (reportId: string) => {
+    try {
+      const result = await getCompletedReport(reportId);
+      // Update the comparison workspace with full data
+      onLoadComparison(result);
+    } catch (err: any) {
+      console.error('[DrawingLibrary] Failed to load full report:', err);
     }
   };
 
@@ -304,14 +317,13 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
     const controller = new AbortController();
     quickAbortRef.current = controller;
     try {
-      const result = await runDrawingComparison({
-        old_drawing: oldFile,
-        new_drawing: newFile,
-        abortSignal: controller.signal,
+      const { result } = await uploadAndCompare(oldFile, newFile, undefined, undefined, undefined, {
         onJobProgress: (job) => setJobMessage(job.progress_message || `Job ${job.status}…`),
+        abortSignal: controller.signal,
       });
       setJobMessage(null);
       setQuickResult(result);
+      await refreshDrawings();
     } catch (err: any) {
       setJobMessage(null);
       setQuickError(err?.message || 'Quick compare failed.');
@@ -491,8 +503,8 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
                     )}
                   </li>
                   {drawings.map((d) => {
-                    const detail = drawingDetails[d.drawing_id];
                     const menuOpen = openMenuId === d.drawing_id;
+                    const displayDate = d.updated_at || d.created_at;
                     return (
                     <li key={d.drawing_id} className="group relative">
                       <div
@@ -555,8 +567,8 @@ export const DrawingLibrary: React.FC<DrawingLibraryProps> = ({ onLoadComparison
                                 {d.name}
                               </p>
                               <p className="text-[11px] text-[#6b7280]">
-                                {d.revision_count ?? '?'} revisions
-                                {detail?.updatedAt ? ` · ${detail.updatedAt}` : ''}
+                                {d.revision_count ?? 0} {d.revision_count === 1 ? 'revision' : 'revisions'}
+                                {displayDate ? ` · ${displayDate.split('T')[0]}` : ''}
                               </p>
                             </>
                           )}

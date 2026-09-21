@@ -16,6 +16,7 @@ export const API_CONFIG = {
     ask: '/ask',
     job: (jobId: string) => `/jobs/${jobId}`,
     report: (reportId: string) => `/reports/${reportId}`,
+    reportSummary: (reportId: string) => `/reports/${reportId}/summary`,
     annotatedPng: (reportId: string, page: number) =>
       `/reports/${reportId}/annotated?format=png&page=${page}`,
     annotatedPdf: (reportId: string) => `/reports/${reportId}/annotated?format=pdf`,
@@ -38,12 +39,10 @@ export const API_CONFIG = {
     },
     uploadAndCompare: '/drawings/upload-and-compare',
   },
-  // OCR/alignment/LLM comparison can legitimately take longer than 15s.
-  // Allow deployments to override this without rebuilding the request logic.
-  timeoutMs: Number((import.meta as any).env?.VITE_API_TIMEOUT_MS) || 120000,
-  // Poll interval for async job status checks (POST /compare returns 202).
-  jobPollIntervalMs: Number((import.meta as any).env?.VITE_JOB_POLL_INTERVAL_MS) || 2000,
-  maxFileSizeBytes: 50 * 1024 * 1024, // 50MB max file size
+  timeoutMs: Number((import.meta as any).env?.VITE_API_TIMEOUT_MS) || 600000,
+  jobPollIntervalMs: Number((import.meta as any).env?.VITE_JOB_POLL_INTERVAL_MS) || 3000,
+  jobPollMaxRetries: Number((import.meta as any).env?.VITE_JOB_POLL_MAX_RETRIES) || 40,
+  maxFileSizeBytes: 50 * 1024 * 1024,
   supportedExtensions: ['.pdf', '.dwg', '.dxf', '.svg', '.png', '.tiff', '.jpg', '.jpeg'],
   supportedMimeTypes: [
     'application/pdf',

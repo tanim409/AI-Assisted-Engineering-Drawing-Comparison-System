@@ -1,5 +1,8 @@
+"""Environment configuration loader.
+
+Loads environment variables from .env file into os.environ.
+"""
 import os
 from dotenv import load_dotenv
 
-# Ensure environment variables are loaded before any other modules initialize their clients
 load_dotenv()

@@ -28,8 +28,9 @@ logger = logging.getLogger(__name__)
 BASE_DPI = float(os.getenv("BASE_DPI", "200.0"))
 # Maximum page width (inches) before we start reducing DPI
 MAX_WIDTH_FOR_BASE_DPI = float(os.getenv("MAX_WIDTH_FOR_BASE_DPI", "24.0"))
-# Maximum DPI cap (for very small pages, though unlikely to hit)
-MAX_DPI = float(os.getenv("MAX_DPI", "400.0"))
+# Maximum DPI cap — capped to prevent OOM on very small drawings
+# (A0 at 400 DPI = ~9000x12000 px ≈ 324MB per image)
+MAX_DPI = float(os.getenv("MAX_DPI", "200.0"))
 # Minimum DPI floor
 MIN_DPI = float(os.getenv("MIN_DPI", "72.0"))
 
@@ -64,16 +65,6 @@ def _get_page_physical_size(page: fitz.Page) -> Tuple[float, float]:
     height_in = rect.height / 72.0
     return width_in, height_in
 
-
-# DPI computation constants
-# Base DPI for normal-sized pages
-BASE_DPI = float(os.getenv("BASE_DPI", "200.0"))
-# Maximum page width (inches) before we start reducing DPI
-MAX_WIDTH_FOR_BASE_DPI = float(os.getenv("MAX_WIDTH_FOR_BASE_DPI", "24.0"))
-# Maximum DPI cap (for very small pages, though unlikely to hit)
-MAX_DPI = float(os.getenv("MAX_DPI", "400.0"))
-# Minimum DPI floor
-MIN_DPI = float(os.getenv("MIN_DPI", "72.0"))
 
 
 def _compute_pair_dpi(old_page_info: dict, new_page_info: dict) -> float:

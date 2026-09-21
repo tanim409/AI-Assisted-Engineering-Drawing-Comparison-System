@@ -60,54 +60,112 @@ def list_jobs(status: Optional[str] = None, owner_user_id: Optional[int] = None)
     return [dict(r) for r in rows]
 
 
-def _update_guarded(cursor, job_id: str, set_sql: str, params: list) -> None:
-    sql = f"UPDATE jobs SET {set_sql}, updated_at = NOW() WHERE job_id = %s AND status IN ('pending', 'processing')"
-    cursor.execute(sql, [*params, job_id])
-
-
-def set_processing(job_id: str, message: Optional[str] = None) -> None:
+def set_processing(job_id: str, message: Optional[str] = None, owner_user_id: Optional[int] = None) -> None:
     with connect() as conn:
         with conn.cursor() as cursor:
-            _update_guarded(cursor, job_id, "status = 'processing', progress_message = %s", [message])
+            if owner_user_id is not None:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'processing', progress_message = %s, updated_at = NOW()
+                    WHERE job_id = %s AND owner_user_id = %s AND status IN ('pending', 'processing')
+                    """,
+                    (message, job_id, owner_user_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'processing', progress_message = %s, updated_at = NOW()
+                    WHERE job_id = %s AND status IN ('pending', 'processing')
+                    """,
+                    (message, job_id),
+                )
 
 
-def set_progress(job_id: str, message: str) -> None:
+def set_progress(job_id: str, message: str, owner_user_id: Optional[int] = None) -> None:
     with connect() as conn:
         with conn.cursor() as cursor:
-            _update_guarded(cursor, job_id, "progress_message = %s", [message])
+            if owner_user_id is not None:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET progress_message = %s, updated_at = NOW()
+                    WHERE job_id = %s AND owner_user_id = %s AND status IN ('pending', 'processing')
+                    """,
+                    (message, job_id, owner_user_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET progress_message = %s, updated_at = NOW()
+                    WHERE job_id = %s AND status IN ('pending', 'processing')
+                    """,
+                    (message, job_id),
+                )
 
 
-def set_completed(job_id: str, result_id: str, was_cached: Optional[bool] = None) -> None:
+def set_completed(job_id: str, result_id: str, was_cached: Optional[bool] = None, owner_user_id: Optional[int] = None) -> None:
     with connect() as conn:
         with conn.cursor() as cursor:
-            _update_guarded(
-                cursor, job_id,
-                "status = 'completed', result_id = %s, was_cached = %s, progress_message = NULL",
-                [result_id, None if was_cached is None else int(was_cached)]
-            )
+            if owner_user_id is not None:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'completed', result_id = %s, was_cached = %s, progress_message = NULL, updated_at = NOW()
+                    WHERE job_id = %s AND owner_user_id = %s AND status IN ('pending', 'processing')
+                    """,
+                    (result_id, None if was_cached is None else int(was_cached), job_id, owner_user_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'completed', result_id = %s, was_cached = %s, progress_message = NULL, updated_at = NOW()
+                    WHERE job_id = %s AND status IN ('pending', 'processing')
+                    """,
+                    (result_id, None if was_cached is None else int(was_cached), job_id),
+                )
 
 
-def set_failed(job_id: str, error_message: str) -> None:
+def set_failed(job_id: str, error_message: str, owner_user_id: Optional[int] = None) -> None:
     with connect() as conn:
         with conn.cursor() as cursor:
-            _update_guarded(
-                cursor, job_id,
-                "status = 'failed', error_message = %s, progress_message = NULL",
-                [error_message]
-            )
+            if owner_user_id is not None:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'failed', error_message = %s, progress_message = NULL, updated_at = NOW()
+                    WHERE job_id = %s AND owner_user_id = %s AND status IN ('pending', 'processing')
+                    """,
+                    (error_message, job_id, owner_user_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'failed', error_message = %s, progress_message = NULL, updated_at = NOW()
+                    WHERE job_id = %s AND status IN ('pending', 'processing')
+                    """,
+                    (error_message, job_id),
+                )
 
 
-def mark_stale_jobs_failed() -> int:
+def mark_stale_jobs_failed(owner_user_id: Optional[int] = None) -> int:
     with connect() as conn:
         with conn.cursor() as cursor:
-            cursor.execute(
-                """
+            query = """
                 UPDATE jobs
                 SET status = 'failed',
                     error_message = 'Server restarted while this job was running; please resubmit.',
                     progress_message = NULL,
                     updated_at = NOW()
                 WHERE status IN ('pending', 'processing')
-                """
-            )
+            """
+            params = []
+            if owner_user_id is not None:
+                query += " AND owner_user_id = %s"
+                params.append(owner_user_id)
+            cursor.execute(query, params)
             return cursor.rowcount

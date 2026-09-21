@@ -1,68 +1,81 @@
+"""Report builder for the hybrid VLM pipeline.
+
+Builds a per-page report dict from the merged Track A + Track B change list.
+No alignment, no SSIM diff, no region bboxes.
+"""
 from datetime import timezone, datetime
 
 
-def build_report(region_data, alignment_info, similarity_score,
-                 comparison_mode="normal", redesign_detected=False,
-                 redesign_metrics=None, alignment_error=None, overall_summary="",
-                 render_dpi=None, page_size_pts=None, page_size_mismatch=None, page_mismatch_details=None):
-    changes = []
-    verified_count = 0
-    disagreement_count = 0
-    for r in region_data:
-        # Prefer the LLM decision; rule-based classification is only a fallback.
-        final_category = (
-            r.get('llm_classification', {}).get('category')
-            or r.get('classification', {}).get('category')
-        )
-        r.setdefault('classification', {})['category'] = final_category
-        verification = r.get('verification', {})
-        if verification.get('verified') is False:
-            disagreement_count += 1
+def calculate_overall_similarity(changes: list) -> float:
+    """Calculate overall drawing similarity dynamically based on change count and severity."""
+    if not changes:
+        return 1.0
+
+    total_penalty = 0.0
+    for c in changes:
+        conf = c.get("confidence_tier") or (c.get("llm_classification", {}) or {}).get("confidence_tier")
+        cat = c.get("category", "other")
+        if conf == "high" or cat in ("dimensional", "structural", "drawing_structure"):
+            total_penalty += 0.04
+        elif conf == "medium" or cat in ("fixtures", "annotations"):
+            total_penalty += 0.025
         else:
-            verified_count += 1
-        if final_category and final_category != 'no_change':
-            changes.append(r)
+            total_penalty += 0.015
 
-    by_category = {}
-    for r in changes:
-        cat = r['classification']['category']
+    return round(max(0.05, 1.0 - total_penalty), 3)
+
+
+def build_report(
+    changes: list,
+    overall_summary: str = "",
+    render_dpi: float = None,
+    page_size_pts: tuple = None,
+    pipeline_version: str = "hybrid_v1",
+) -> dict:
+    """Build the per-page report dict from the merged change list.
+
+    Args:
+        changes: List of change dicts from compare_drawing_pages().
+        overall_summary: AI-generated summary string.
+        render_dpi: DPI used to render this page (for informational purposes).
+        page_size_pts: (width_pts, height_pts) tuple (informational only).
+        pipeline_version: Pipeline identifier tag — 'hybrid_v1' for new pipeline.
+
+    Returns:
+        Dict suitable for save_report_page().
+    """
+    by_category: dict[str, int] = {}
+    track_a_count = 0
+    track_b_count = 0
+
+    for c in changes:
+        cat = c.get("category", "other")
         by_category[cat] = by_category.get(cat, 0) + 1
-
-    llm_response = [r.get("llm_classification") for r in region_data]
+        if c.get("source") == "extraction":
+            track_a_count += 1
+        elif c.get("source") == "visual":
+            track_b_count += 1
 
     report = {
         "changes": changes,
-        'generated_at': datetime.now(timezone.utc).isoformat(),
-        "alignment": {
-            "match_count": alignment_info["match_count"],
-            "inlier_count": alignment_info["inlier_count"],
-            "confidence": round(alignment_info["confidence"], 3),
-        },
-        "overall_similarity": round(similarity_score, 4),
-        "total_regions_detected": len(region_data),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "overall_similarity": calculate_overall_similarity(changes),
+        "total_regions_detected": len(changes),  # kept for frontend compat
         "total_changes": len(changes),
         "changes_by_category": by_category,
-        "llm_response": llm_response,
-        "comparison_mode": comparison_mode,
-        "redesign_detected": redesign_detected,
-        "redesign_metrics": redesign_metrics or {},
-        "verification_summary": {
-            "ocr_llm_agreement_count": verified_count,
-            "ocr_llm_disagreement_count": disagreement_count,
-        },
         "overall_summary": overall_summary,
+        "pipeline_version": pipeline_version,
+        "track_a_count": track_a_count,
+        "track_b_count": track_b_count,
     }
-    if alignment_error:
-        report["alignment_error"] = alignment_error
+
     if render_dpi is not None:
         report["render_dpi"] = round(render_dpi, 1)
+
     if page_size_pts is not None:
         report["page_size_pts"] = {
             "width": round(page_size_pts[0], 1),
             "height": round(page_size_pts[1], 1),
         }
-    if page_size_mismatch is not None:
-        report["page_size_mismatch"] = page_size_mismatch
-        if page_mismatch_details:
-            report["page_size_mismatch_details"] = page_mismatch_details
+
     return report

@@ -42,7 +42,7 @@ def get_job_status(job_id: str, current_user: dict = Depends(auth.get_current_us
         was_cached = job["was_cached"]
         result = _comparison_response(
             comparison, full,
-            was_cached=True if was_cached is None else bool(was_cached),
+            was_cached=False if was_cached is None else bool(was_cached),
         )
     else:
         result = get_full_report(job["result_id"], owner_user_id=user_id)

@@ -20,11 +20,19 @@ export async function pollJobStatus(
     abortSignal?: AbortSignal;
     intervalMs?: number;
     timeoutMs?: number;
+    maxRetries?: number;
+    backoffMultiplier?: number;
   }
 ): Promise<{ status: string; result?: Record<string, any>; error_message?: string }> {
   const interval = options?.intervalMs ?? API_CONFIG.jobPollIntervalMs;
   const timeout = options?.timeoutMs ?? API_CONFIG.timeoutMs;
+  const maxRetries = options?.maxRetries ?? API_CONFIG.jobPollMaxRetries;
+  const backoffMultiplier = options?.backoffMultiplier ?? 1.5;
+  
+  let currentInterval = interval;
+  let attempt = 0;
   const startedAt = Date.now();
+  
   for (;;) {
     if (options?.abortSignal?.aborted) {
       const abortErr: ComparisonError = {
@@ -36,17 +44,22 @@ export async function pollJobStatus(
       };
       throw abortErr;
     }
+    
     const res = await authFetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.job(jobId)}`);
     const data = await res.json().catch(() => null);
+    
     if (res.status === 404) {
       throw new Error(`Job '${jobId}' does not exist.`);
     }
     if (!res.ok || !data) {
       throw new Error('Failed to check comparison job status.');
     }
+    
     const job = data as JobState;
     options?.onProgress?.({ job_id: job.job_id, status: job.status, progress_message: job.progress_message });
+    
     if (job.status === 'completed') return { status: 'completed', result: job.result };
+    
     if (job.status === 'failed') {
       const errorObj: ComparisonError = {
         type: '500_SERVER_ERROR', statusCode: 500,
@@ -57,6 +70,7 @@ export async function pollJobStatus(
       };
       throw errorObj;
     }
+    
     if (Date.now() - startedAt > timeout) {
       const errorObj: ComparisonError = {
         type: 'NETWORK_TIMEOUT',
@@ -68,7 +82,15 @@ export async function pollJobStatus(
       };
       throw errorObj;
     }
-    await new Promise((resolve) => setTimeout(resolve, interval));
+    
+    // Exponential backoff with jitter
+    const jitter = Math.random() * 0.3 * currentInterval;
+    await new Promise((resolve) => setTimeout(resolve, currentInterval + jitter));
+    
+    attempt++;
+    if (attempt < maxRetries) {
+      currentInterval = Math.min(currentInterval * backoffMultiplier, 30000); // Cap at 30s
+    }
   }
 }
 
@@ -267,12 +289,19 @@ export function mapBackendResult(
 
     const classification = c?.classification ?? {};
     const llm = c?.llm_classification ?? {};
-    // Backend classification is the final decision; the LLM value is evidence.
-    const category = String(classification?.category ?? llm?.category ?? '');
-    const description = String(llm?.description ?? c?.description ?? '');
+    // For hybrid pipeline (hybrid_v1), category is a top-level field.
+    // For legacy, derive from classification/llm sub-objects.
+    const category = String(c?.category ?? classification?.category ?? llm?.category ?? 'other');
+    const description = String(c?.description ?? llm?.description ?? '');
+
+    // Hybrid pipeline fields
+    const source = c?.source as 'extraction' | 'visual' | undefined;
+    const confidence_tier = c?.confidence_tier as 'high' | 'needs_review' | undefined;
+    const location = c?.location ?? c?.zone ?? undefined;
+    const entity_name = c?.entity_name ?? undefined;
 
     return {
-      id: `CHG-${String(index + 1).padStart(3, '0')}`,
+      id: c?.id ?? `CHG-${String(index + 1).padStart(3, '0')}`,
       category,
       title: description.length > 60 ? description.slice(0, 57) + '…' : description,
       description,
@@ -280,21 +309,26 @@ export function mapBackendResult(
       changeIndex,
       reportId,
       region,
-      oldValue: c?.old_text ?? c?.oldValue ?? '',
-      newValue: c?.new_text ?? c?.newValue ?? '',
+      oldValue: c?.old_value ?? c?.old_text ?? c?.oldValue ?? '',
+      newValue: c?.new_value ?? c?.new_text ?? c?.newValue ?? '',
       delta: c?.delta ?? '',
       severity: (c?.severity as ChangeSeverity) ?? 'moderate',
       status: mapBackendReviewStatus(c?.review?.status) ?? ((c?.status as ChangeReviewStatus) ?? 'pending'),
-      affectedFeature: c?.affected_feature ?? c?.affectedFeature ?? category,
+      affectedFeature: c?.entity_name ?? c?.affected_feature ?? c?.affectedFeature ?? category,
       drawingRevisionA: 'A',
       drawingRevisionB: 'B',
-      zone: region.zone,
+      zone: location ?? region.zone,
       complianceImpact: c?.compliance_impact ?? c?.complianceImpact ?? '',
       ocrConfidence: c?.ocr_confidence ?? c?.ocrConfidence,
       classificationConfidence: c?.llm_classification?.confidence ?? c?.classification?.confidence,
       verification: c?.verification,
       ruleBasedCategory: c?.rule_based_classification?.category,
       llmSource: llm?.source ?? null,
+      // Hybrid VLM pipeline fields
+      source,
+      confidence_tier,
+      location,
+      entity_name,
     };
   };
 
@@ -318,12 +352,15 @@ export function mapBackendResult(
     raw.changes_by_category ?? raw.categoryCounts ?? {};
 
   const alignment = raw.alignment ?? {};
-  const alignmentScoreRaw =
+  const rawSimilarity =
     typeof raw.overall_similarity === 'number'
-      ? Math.round(raw.overall_similarity * 100)
+      ? raw.overall_similarity
+      : typeof raw.pages?.[0]?.overall_similarity === 'number'
+      ? raw.pages[0].overall_similarity
       : typeof alignment?.confidence === 'number'
-      ? Math.round(alignment.confidence * 100)
-      : 0;
+      ? alignment.confidence
+      : 1.0;
+  const alignmentScoreRaw = Math.round(rawSimilarity * 100);
   const alignmentConfidence: ComparisonResult['alignmentConfidence'] =
     alignmentScoreRaw >= 75 ? 'high' : alignmentScoreRaw >= 45 ? 'medium' : 'low';
 
@@ -356,13 +393,17 @@ export function mapBackendResult(
     oldDrawingUrl:
       oldDrawingUrl ||
       (raw.drawing_id && raw.old_revision_id
-        ? `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.drawingRevisionRender(raw.drawing_id, raw.old_revision_id)}&token=${getToken() ?? ''}`
+        ? `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.drawingRevisionRender(raw.drawing_id, raw.old_revision_id)}`
         : undefined),
     newDrawingUrl:
       newDrawingUrl ||
       (raw.drawing_id && raw.new_revision_id
-        ? `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.drawingRevisionRender(raw.drawing_id, raw.new_revision_id)}&token=${getToken() ?? ''}`
+        ? `${API_CONFIG.baseUrl}${API_CONFIG.endpoints.drawingRevisionRender(raw.drawing_id, raw.new_revision_id)}`
         : undefined),
+    // Hybrid VLM pipeline metadata
+    pipelineVersion: raw.pipeline_version ?? (Array.isArray(raw.pages) && raw.pages[0]?.pipeline_version) ?? undefined,
+    trackACount: raw.track_a_count ?? changes.filter((c: any) => c.source === 'extraction' || c.confidence_tier === 'high').length,
+    trackBCount: raw.track_b_count ?? changes.filter((c: any) => c.source === 'visual' || c.confidence_tier === 'needs_review').length,
   };
   return result;
 }
@@ -380,218 +421,12 @@ export function mapFrontendReviewStatus(status: ChangeReviewStatus): 'confirmed'
   return status === 'approved' ? 'confirmed' : 'false_positive';
 }
 
-/**
- * Generate a rich, interactive demo ComparisonResult directly on the client side
- * without calling backend AI models or requiring cloud storage.
- */
-export function createDemoComparisonResult(
-  oldFile: Partial<DrawingFile> | File,
-  newFile: Partial<DrawingFile> | File
-): ComparisonResult {
-  const oldUrl = oldFile instanceof File ? URL.createObjectURL(oldFile) : (oldFile as any)?.url || '';
-  const newUrl = newFile instanceof File ? URL.createObjectURL(newFile) : (newFile as any)?.url || '';
 
-  const buildDrawingFile = (file: Partial<DrawingFile> | File, suffix: string): DrawingFile => {
-    if (file instanceof File) {
-      return {
-        id: `demo-file-${suffix}-${Date.now()}`,
-        name: file.name,
-        revision: suffix,
-        fileSize: formatBytes(file.size),
-        dimensions: 'A1 (841 x 594 mm)',
-        type: file.type || file.name.split('.').pop() || 'PNG',
-        uploadedAt: new Date().toISOString(),
-        author: 'Lead Mechanical Engineer',
-      };
-    }
-    return {
-      id: file.id || `demo-file-${suffix}`,
-      name: file.name || `Drawing Rev ${suffix}`,
-      revision: file.revision || suffix,
-      fileSize: file.fileSize || '2.4 MB',
-      dimensions: file.dimensions || 'A1 (841 x 594 mm)',
-      type: file.type || 'PDF',
-      uploadedAt: file.uploadedAt || new Date().toISOString(),
-      author: file.author || 'Lead Mechanical Engineer',
-    };
-  };
-
-  const reportId = `demo-report-${Date.now()}`;
-
-  const changes = [
-    {
-      id: 'CHG-001',
-      category: 'Dimensional',
-      title: 'Bore Diameter changed from Ø 45.00mm to Ø 50.00mm',
-      description: 'Critical internal bore dimension expanded for high-pressure shaft fitting clearance.',
-      pageNumber: 1,
-      changeIndex: 0,
-      reportId,
-      region: { x: 28, y: 32, width: 18, height: 14, zone: 'Zone B-3' },
-      oldValue: 'Ø 45.00 ± 0.05 mm',
-      newValue: 'Ø 50.00 ± 0.02 mm',
-      delta: '+5.00 mm',
-      severity: 'critical' as ChangeSeverity,
-      status: 'pending' as ChangeReviewStatus,
-      affectedFeature: 'Inner Main Bore',
-      drawingRevisionA: 'Rev A',
-      drawingRevisionB: 'Rev B',
-      zone: 'Zone B-3',
-      complianceImpact: 'Requires updated seal ring specification (ISO 3601).',
-      ocrConfidence: 0.98,
-      classificationConfidence: 0.95,
-    },
-    {
-      id: 'CHG-002',
-      category: 'Title Block',
-      title: 'Revision Block updated to Rev B (ECO-2026-889)',
-      description: 'Title block updated with engineering change order number ECO-2026-889 and date.',
-      pageNumber: 1,
-      changeIndex: 1,
-      reportId,
-      region: { x: 68, y: 78, width: 24, height: 16, zone: 'Zone D-4' },
-      oldValue: 'REV A | RELEASED 2025-11-10',
-      newValue: 'REV B | ECO-2026-889 2026-09-17',
-      delta: 'Revision level incremented',
-      severity: 'minor' as ChangeSeverity,
-      status: 'approved' as ChangeReviewStatus,
-      affectedFeature: 'Document Control',
-      drawingRevisionA: 'Rev A',
-      drawingRevisionB: 'Rev B',
-      zone: 'Zone D-4',
-      complianceImpact: 'Fully documented in engineering change record.',
-      ocrConfidence: 0.99,
-      classificationConfidence: 0.97,
-    },
-    {
-      id: 'CHG-003',
-      category: 'Material',
-      title: 'Material specification upgraded to Stainless Steel 316L',
-      description: 'Flange body material upgraded from Carbon Steel A105 to Austenitic SS 316L for corrosion resistance.',
-      pageNumber: 1,
-      changeIndex: 2,
-      reportId,
-      region: { x: 14, y: 72, width: 22, height: 12, zone: 'Zone A-4' },
-      oldValue: 'ASTM A105 Carbon Steel',
-      newValue: 'ASTM A312 TP316L Stainless',
-      delta: 'Material grade upgrade',
-      severity: 'moderate' as ChangeSeverity,
-      status: 'pending' as ChangeReviewStatus,
-      affectedFeature: 'Bill of Materials (BOM)',
-      drawingRevisionA: 'Rev A',
-      drawingRevisionB: 'Rev B',
-      zone: 'Zone A-4',
-      complianceImpact: 'NACE MR0175 compliant for sour service environment.',
-      ocrConfidence: 0.96,
-      classificationConfidence: 0.94,
-    },
-    {
-      id: 'CHG-004',
-      category: 'Dimensional',
-      title: 'Pitch Circle Diameter (PCD) expanded to 125.00mm',
-      description: 'Bolt hole circle radius increased to accommodate 8-bolt heavy duty flange layout.',
-      pageNumber: 1,
-      changeIndex: 3,
-      reportId,
-      region: { x: 45, y: 20, width: 20, height: 18, zone: 'Zone C-2' },
-      oldValue: 'PCD 110.00 mm (6x M10)',
-      newValue: 'PCD 125.00 mm (8x M12)',
-      delta: '+15.00 mm PCD, +2 Bolt Holes',
-      severity: 'critical' as ChangeSeverity,
-      status: 'pending' as ChangeReviewStatus,
-      affectedFeature: 'Flange Bolt Pattern',
-      drawingRevisionA: 'Rev A',
-      drawingRevisionB: 'Rev B',
-      zone: 'Zone C-2',
-      complianceImpact: 'Mating pipe flange must be re-ordered to Class 300 pattern.',
-      ocrConfidence: 0.95,
-      classificationConfidence: 0.92,
-    },
-    {
-      id: 'CHG-005',
-      category: 'Geometric',
-      title: 'Added 2x M8 Auxiliary Drain Port Taps',
-      description: 'New tapped holes added at lower flange sector for low-point condensate drainage.',
-      pageNumber: 1,
-      changeIndex: 4,
-      reportId,
-      region: { x: 52, y: 55, width: 16, height: 14, zone: 'Zone C-3' },
-      oldValue: 'Solid web (No ports)',
-      newValue: '2x M8 x 1.25 TAP THRU',
-      delta: 'New geometric feature',
-      severity: 'moderate' as ChangeSeverity,
-      status: 'pending' as ChangeReviewStatus,
-      affectedFeature: 'Drainage Subsystem',
-      drawingRevisionA: 'Rev A',
-      drawingRevisionB: 'Rev B',
-      zone: 'Zone C-3',
-      complianceImpact: 'Requires NPT plug callouts in assembly manual.',
-      ocrConfidence: 0.94,
-      classificationConfidence: 0.91,
-    },
-  ];
-
-  return {
-    id: reportId,
-    reportId,
-    totalPages: 1,
-    projectName: 'Engineering Drawing Comparison',
-    drawingNumber: 'DWG-2026-DEMO',
-    title: 'Flange Assembly & Pipe Support Layout',
-    discipline: 'Mechanical',
-    oldDrawing: buildDrawingFile(oldFile, 'A'),
-    newDrawing: buildDrawingFile(newFile, 'B'),
-    alignmentScore: 94,
-    alignmentConfidence: 'high',
-    processingTimeMs: 250,
-    totalChanges: changes.length,
-    overallSimilarity: 0.94,
-    totalRegionsDetected: changes.length,
-    overallSummary:
-      'Demo Mode: Interactive comparison UI. 5 engineering differences detected across dimensional tolerances, material specification, title block ECO revision, and bolt pattern geometry.',
-    categoryCounts: {
-      Dimensional: 2,
-      Material: 1,
-      'Title Block': 1,
-      Geometric: 1,
-    },
-    changes,
-    timestamp: new Date().toISOString(),
-    oldDrawingUrl: oldUrl,
-    newDrawingUrl: newUrl,
-  };
-}
 
 /**
  * Ask a natural-language question about a report's detected changes.
  */
 export async function askQuestion(reportId: string, question: string): Promise<QaAnswer> {
-  if (reportId.startsWith('demo-')) {
-    const qLower = question.toLowerCase();
-    if (qLower.includes('dimension') || qLower.includes('bore') || qLower.includes('size')) {
-      return {
-        answer: 'The primary dimensional changes are: (1) Main bore diameter expanded from Ø 45.00mm to Ø 50.00mm (CHG-001) for shaft clearance, and (2) Bolt Pitch Circle Diameter (PCD) enlarged from 110.00mm to 125.00mm with 8 bolt holes instead of 6 (CHG-004).',
-        referenced_change_indices: [0, 3],
-      };
-    }
-    if (qLower.includes('material') || qLower.includes('steel') || qLower.includes('grade')) {
-      return {
-        answer: 'The material specification was upgraded from ASTM A105 Carbon Steel to ASTM A312 TP316L Stainless Steel (CHG-003) to satisfy NACE MR0175 corrosion resistance standards.',
-        referenced_change_indices: [2],
-      };
-    }
-    if (qLower.includes('revision') || qLower.includes('eco') || qLower.includes('title')) {
-      return {
-        answer: 'The title block was updated to Revision B under Engineering Change Order ECO-2026-889 dated 2026-09-17 (CHG-002).',
-        referenced_change_indices: [1],
-      };
-    }
-    return {
-      answer: `Based on the CAD drawing comparison for report ${reportId}: We identified 5 key changes including main bore expansion, bolt PCD revision, material upgrade to 316L stainless steel, and added drain ports. Click on any change marker in the list to zoom in.`,
-      referenced_change_indices: [0, 1, 2, 3, 4],
-    };
-  }
-
   try {
     const res = await authFetch(`${API_CONFIG.baseUrl}${API_CONFIG.endpoints.ask}`, {
       method: 'POST',
@@ -607,11 +442,8 @@ export async function askQuestion(reportId: string, question: string): Promise<Q
       referenced_change_indices: Array.isArray(data?.referenced_change_indices)
         ? data.referenced_change_indices : [],
     };
-  } catch {
-    return {
-      answer: `Analyzed your question "${question}". Identified 5 engineering differences across dimensions, material grades, and geometry on drawing DWG-2026-DEMO.`,
-      referenced_change_indices: [0, 1],
-    };
+  } catch (err: any) {
+    throw new Error(err?.message || 'Could not answer that question.');
   }
 }
 

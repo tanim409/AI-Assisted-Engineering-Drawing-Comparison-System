@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import Optional
 
@@ -17,6 +18,7 @@ from services.report_data import (
 from services.history_export import build_summary_export_pdf, build_history_export_pdf
 from services.revision_storage import load_revision_file
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -70,6 +72,12 @@ async def compare_drawings(
         if not new_bytes:
             raise HTTPException(status_code=400, detail=f"File '{new_drawing.filename}' is empty")
 
+        MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+        if len(old_bytes) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail=f"File '{old_drawing.filename}' exceeds the 50MB limit")
+        if len(new_bytes) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail=f"File '{new_drawing.filename}' exceeds the 50MB limit")
+
         job = jobs.create_job(jobs.JOB_TYPE_STANDALONE, owner_user_id=current_user["user_id"])
         background_tasks.add_task(_run_standalone_compare_job, job["job_id"], old_bytes, new_bytes, current_user["user_id"])
         return JSONResponse(status_code=202, content={"job_id": job["job_id"], "status": "pending"})
@@ -77,9 +85,7 @@ async def compare_drawings(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[ERROR] Exception in /compare: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"Exception in /compare: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -95,14 +101,28 @@ async def ask_question(payload: AskRequest, current_user: dict = Depends(auth.ge
 
 
 @router.get("/reports")
-async def list_completed_reports(current_user: dict = Depends(auth.get_current_user)):
+async def list_completed_reports(
+    current_user: dict = Depends(auth.get_current_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
     from services.report_data import list_user_reports
-    return JSONResponse(content={"reports": list_user_reports(current_user["user_id"])})
+    return JSONResponse(content={"reports": list_user_reports(current_user["user_id"], limit=limit, offset=offset)})
 
 
 @router.get("/reports/{report_id}")
 async def get_completed_report(report_id: str, current_user: dict = Depends(auth.get_current_user)):
     report = get_full_report(report_id, owner_user_id=current_user["user_id"])
+    if report is None:
+        raise HTTPException(status_code=404, detail="Report not found or access denied")
+    return JSONResponse(content=report)
+
+
+@router.get("/reports/{report_id}/summary")
+async def get_report_summary(report_id: str, current_user: dict = Depends(auth.get_current_user)):
+    """Lightweight endpoint — returns report metadata without page images or full change data."""
+    from services.report_data import get_report_summary
+    report = get_report_summary(report_id, owner_user_id=current_user["user_id"])
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found or access denied")
     return JSONResponse(content=report)

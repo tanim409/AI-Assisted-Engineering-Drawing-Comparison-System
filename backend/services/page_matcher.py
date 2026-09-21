@@ -23,15 +23,6 @@ Matching Algorithm:
 5. Reject pairs below MIN_TITLE_MATCH_SCORE (default 70) -> treated as added/removed.
 6. Fallback: pages with empty/low-confidence title OCR fall back to positional matching.
 """
-import os
-import logging
-from typing import List, Tuple, Optional, Dict, Any
-from dataclasses import dataclass
-
-import cv2
-import numpy as np
-from rapidfuzz import fuzz
-from scipy.optimize import linear_sum_assignment
 
 import os
 import logging
@@ -42,6 +33,7 @@ import cv2
 import numpy as np
 from rapidfuzz import fuzz
 from scipy.optimize import linear_sum_assignment
+
 
 from services.pdf_pages import (
     TITLE_BLOCK_X_PCT,
@@ -92,31 +84,19 @@ def _normalize_text(text: str) -> str:
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-
 def extract_page_signatures(pages: List[np.ndarray], page_numbers: List[int]) -> List[PageSignature]:
-    """Extract title-block signatures from page images without Tesseract."""
+    """Extract title-block signatures from page images."""
     signatures = []
     for idx, (page_img, page_num) in enumerate(zip(pages, page_numbers)):
         title_crop = _crop_title_block(page_img)
-        if title_crop.size == 0:
-            signatures.append(PageSignature(
-                page_index=idx,
-                page_number=page_num,
-                signature="",
-                ocr_confidence=0.0,
-                word_count=0,
-                method="title_block"
-            ))
-            continue
-
-        normalized = f"sheet {page_num} title block"
+        # Without OCR/vector text, mark signature as empty so it safely uses positional matching
         signatures.append(PageSignature(
             page_index=idx,
             page_number=page_num,
-            signature=normalized,
-            ocr_confidence=85.0,
-            word_count=len(normalized.split()),
-            method="title_block"
+            signature="",
+            ocr_confidence=0.0,
+            word_count=0,
+            method="positional_fallback"
         ))
     return signatures
 
@@ -278,16 +258,12 @@ def get_match_summary(matches: List[PageMatch]) -> Dict[str, Any]:
 
 
 def extract_signatures_from_crops(crops_data: List[dict]) -> List[PageSignature]:
-    """
-    Extract signatures from pre-rendered title-block crops.
-    If text_signature is present (from PyMuPDF vector extraction), use it directly.
-    Otherwise construct normalized title block signature.
-    """
+    """Extract signatures from pre-rendered title-block crops or embedded PDF vector text."""
     signatures = []
     for idx, crop_data in enumerate(crops_data):
         page_num = crop_data["page_number"]
         raw_text = crop_data.get("text_signature", "")
-        
+
         if not raw_text and "pdf_doc" in crop_data and "page_idx" in crop_data:
             try:
                 page = crop_data["pdf_doc"][crop_data["page_idx"]]
@@ -303,19 +279,19 @@ def extract_signatures_from_crops(crops_data: List[dict]) -> List[PageSignature]
                 raw_text = ""
 
         normalized = _normalize_text(raw_text)
-        if not normalized:
-            normalized = f"sheet {page_num} title block"
+        has_text = bool(normalized and len(normalized.split()) >= MIN_TITLE_WORDS)
 
         signatures.append(PageSignature(
             page_index=idx,
             page_number=page_num,
-            signature=normalized,
-            ocr_confidence=90.0 if raw_text else 80.0,
-            word_count=len(normalized.split()),
-            method="title_block"
+            signature=normalized if has_text else "",
+            ocr_confidence=90.0 if has_text else 0.0,
+            word_count=len(normalized.split()) if has_text else 0,
+            method="title_block" if has_text else "positional_fallback"
         ))
 
     return signatures
+
 
 
 def match_pages_from_signatures(

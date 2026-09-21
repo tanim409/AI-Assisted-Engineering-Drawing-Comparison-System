@@ -29,11 +29,10 @@ def clean_db():
     init_versioning_db()
     with connect() as conn:
         with conn.cursor() as cursor:
-            for table in ["change_reviews", "report_pages", "report_aliases", "reports", "jobs", "comparisons", "revisions", "drawings"]:
-                try:
-                    cursor.execute(f"TRUNCATE TABLE {table} CASCADE;")
-                except Exception:
-                    pass
+            try:
+                cursor.execute("TRUNCATE TABLE change_reviews, report_pages, report_aliases, comparisons, revisions, reports, drawings, jobs RESTART IDENTITY CASCADE;")
+            except Exception:
+                pass
             # Ensure test user exists (auth override uses user_id=1)
             cursor.execute("""
                 INSERT INTO users (user_id, email, password_hash, email_verified, is_active)
@@ -58,21 +57,25 @@ def pipeline_counter(monkeypatch):
     def fake_ocr(region_img):
         return {"text": "STUB-TEXT-123", "confidence": 90.0}
 
-    def fake_llm(flagged_regions, patch_images=None, old_gray=None, new_gray=None):
-        results = {
-            i: {
-                "region_index": i,
-                "category": "note_or_annotation_change",
-                "description": "stub change",
-                "confidence": 0.9,
-                "source": "fallback",
-            }
-            for i, _ in enumerate(flagged_regions)
+    def fake_llm(old_gray, new_gray_aligned):
+        return {
+            "summary": "stub summary",
+            "changes": [
+                {
+                    "id": "CHG-001",
+                    "entity_name": "Stub Entity",
+                    "zone": "Zone A",
+                    "old_value": "Old",
+                    "new_value": "New",
+                    "description": "stub change",
+                    "category": "dimension_change",
+                    "status": "pending",
+                }
+            ],
         }
-        return {"results": results, "overall_summary": "stub summary"}
 
     monkeypatch.setattr(engine, "run_comparison", counting_run)
-    monkeypatch.setattr(engine, "llm_classify_batch", fake_llm)
+    monkeypatch.setattr(engine, "classify_whole_image", fake_llm)
     return counter
 
 

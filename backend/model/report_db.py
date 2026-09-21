@@ -61,27 +61,7 @@ def init_db():
                 );
             """)
 
-            # Password resets table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS password_resets (
-                    reset_token VARCHAR(255) PRIMARY KEY,
-                    user_id     INT NOT NULL,
-                    expires_at  TIMESTAMP NOT NULL,
-                    used        BOOLEAN NOT NULL DEFAULT FALSE,
-                    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-                );
-            """)
 
-            # Email verifications table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS email_verifications (
-                    verification_token VARCHAR(255) PRIMARY KEY,
-                    user_id            INT NOT NULL,
-                    expires_at         TIMESTAMP NOT NULL,
-                    used               BOOLEAN NOT NULL DEFAULT FALSE,
-                    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-                );
-            """)
 
             # Report-level table
             cursor.execute("""
@@ -173,8 +153,17 @@ def init_db():
                     FOREIGN KEY (report_id) REFERENCES reports(report_id) ON DELETE CASCADE ON UPDATE CASCADE
                 );
             """)
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets (user_id)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_email_verifications_user ON email_verifications (user_id)")
+            # Migration: add pipeline_version and total_changes columns for report_pages
+            try:
+                cursor.execute(
+                    "ALTER TABLE report_pages ADD COLUMN IF NOT EXISTS pipeline_version VARCHAR(50) DEFAULT 'legacy';"
+                )
+                cursor.execute(
+                    "ALTER TABLE report_pages ADD COLUMN IF NOT EXISTS total_changes INT DEFAULT 0;"
+                )
+            except Exception:
+                pass  # Columns may already exist on re-runs
+
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_owner ON reports (owner_user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_status ON reports (status)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_report_pages_report ON report_pages (report_id)")

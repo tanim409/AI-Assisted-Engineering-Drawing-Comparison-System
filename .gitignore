@@ -44,6 +44,8 @@ frontend/.env.*.local
 **/scratch/
 **/scratch_*.py
 backend/test_summary.pdf
+backend/storage/
+diagram.png
 
 # SSL / CA Certificates & Key Stores
 *.pem

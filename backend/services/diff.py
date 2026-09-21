@@ -1,167 +1,160 @@
+"""Step 2 & Step 3 — CV Diff, Cluster Detection, & ROI Patch Extraction.
+
+Computes pixel differences on aligned drawing pairs, isolates change clusters
+using tight morphology, merges proximate boxes without runaway collapse,
+and extracts 100% native-resolution ROI patch pairs with contextual margins.
+"""
+import base64
 import cv2
 import numpy as np
-from skimage.metrics import structural_similarity as ssim
-def compute_diff_mask(old_gray, new_gray_aligned):
-    score, diff = ssim(old_gray, new_gray_aligned, full=True)
-    diff = (diff * 255).astype("uint8")
 
-    thresh = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-    # Use smaller 5x5 kernel and 1 iteration to prevent aggressive merging of distinct nearby changes
-    kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_close, iterations=1)
-    cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel_open, iterations=1)
-    return {
-        'similarity_score': score,
-        'diff': diff,
-        'mask': cleaned
-    }
 
-def extract_change_regions(mask, min_area=40):
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    regions = []
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if area < min_area:
+def detect_diff_clusters(
+    img_a: np.ndarray,
+    aligned_b: np.ndarray,
+    min_area: int = 120,
+    thresh_val: int = 30,
+    morph_kernel_size: tuple[int, int] = (9, 9),
+) -> list[tuple[int, int, int, int]]:
+    """Detect bounding boxes of visual difference clusters between two aligned images."""
+    gray_a = cv2.cvtColor(img_a, cv2.COLOR_BGR2GRAY) if img_a.ndim == 3 else img_a
+    gray_b = cv2.cvtColor(aligned_b, cv2.COLOR_BGR2GRAY) if aligned_b.ndim == 3 else aligned_b
+
+    # Mild Gaussian blur to suppress scanner paper grain
+    blur_a = cv2.GaussianBlur(gray_a, (3, 3), 0)
+    blur_b = cv2.GaussianBlur(gray_b, (3, 3), 0)
+
+    # Absolute pixel difference
+    diff = cv2.absdiff(blur_a, blur_b)
+
+    # Binary threshold
+    _, thresh = cv2.threshold(diff, thresh_val, 255, cv2.THRESH_BINARY)
+
+    # Closing bridges broken text/lines without inflating outer boundaries
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, morph_kernel_size)
+    morphed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+    # Find external contours
+    contours, _ = cv2.findContours(morphed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    boxes = []
+    for c in contours:
+        area = cv2.contourArea(c)
+        if area >= min_area:
+            x, y, w, h = cv2.boundingRect(c)
+            boxes.append((x, y, w, h))
+
+    print(f"[diff] Detected {len(boxes)} raw diff contour boxes (min_area={min_area})")
+    return boxes
+
+
+def merge_nearby_boxes(
+    boxes: list[tuple[int, int, int, int]],
+    distance_threshold: int = 25,
+    max_box_ratio: float = 0.65,
+    page_shape: tuple[int, int] = None,
+) -> list[tuple[int, int, int, int]]:
+    """Combine proximate bounding boxes while preventing full-page collapse."""
+    if not boxes:
+        return []
+
+    rects = [[x, y, x + w, y + h] for (x, y, w, h) in boxes]
+    max_w = int(page_shape[1] * max_box_ratio) if page_shape else 99999
+    max_h = int(page_shape[0] * max_box_ratio) if page_shape else 99999
+
+    while True:
+        merged = False
+        new_rects = []
+        skip_indices = set()
+
+        for i in range(len(rects)):
+            if i in skip_indices:
+                continue
+
+            r1 = rects[i]
+            x1_a, y1_a, x2_a, y2_a = r1
+
+            for j in range(i + 1, len(rects)):
+                if j in skip_indices:
+                    continue
+
+                r2 = rects[j]
+                x1_b, y1_b, x2_b, y2_b = r2
+
+                gap_x = max(0, max(x1_a, x1_b) - min(x2_a, x2_b))
+                gap_y = max(0, max(y1_a, y1_b) - min(y2_a, y2_b))
+
+                if gap_x <= distance_threshold and gap_y <= distance_threshold:
+                    candidate_w = max(x2_a, x2_b) - min(x1_a, x1_b)
+                    candidate_h = max(y2_a, y2_b) - min(y1_a, y1_b)
+
+                    # Prevent merging if resulting box engulfs the whole page
+                    if candidate_w <= max_w and candidate_h <= max_h:
+                        x1_a = min(x1_a, x1_b)
+                        y1_a = min(y1_a, y1_b)
+                        x2_a = max(x2_a, x2_b)
+                        y2_a = max(y2_a, y2_b)
+                        skip_indices.add(j)
+                        merged = True
+
+            new_rects.append([x1_a, y1_a, x2_a, y2_a])
+
+        rects = new_rects
+        if not merged:
+            break
+
+    merged_boxes = [(r[0], r[1], r[2] - r[0], r[3] - r[1]) for r in rects]
+    print(f"[diff] Merged {len(boxes)} raw boxes into {len(merged_boxes)} discrete ROI clusters")
+    return merged_boxes
+
+
+def extract_roi_patches(
+    img_a: np.ndarray,
+    aligned_b: np.ndarray,
+    boxes: list[tuple[int, int, int, int]],
+    padding_pct: float = 0.15,
+) -> list[dict]:
+    """Crop native 100% resolution patch pairs with contextual padding and normalized bboxes."""
+    H, W = img_a.shape[:2]
+    patches = []
+
+    for idx, (x, y, w, h) in enumerate(boxes):
+        pad_w = max(int(w * padding_pct), 15)
+        pad_h = max(int(h * padding_pct), 15)
+
+        crop_y1 = max(0, y - pad_h)
+        crop_y2 = min(H, y + h + pad_h)
+        crop_x1 = max(0, x - pad_w)
+        crop_x2 = min(W, x + w + pad_w)
+
+        patch_a = img_a[crop_y1:crop_y2, crop_x1:crop_x2]
+        patch_b = aligned_b[crop_y1:crop_y2, crop_x1:crop_x2]
+
+        if patch_a.size == 0 or patch_b.size == 0:
             continue
-        x, y, w, h = cv2.boundingRect(contour)
-        pad = 6
-        regions.append({
-            'area': area,
-            'x': max(0, x - pad),
-            'y': max(0, y - pad),
-            'w': w + 2 * pad,
-            'h': h + 2 * pad
+
+        ok_a, buf_a = cv2.imencode(".png", patch_a)
+        ok_b, buf_b = cv2.imencode(".png", patch_b)
+
+        if not ok_a or not ok_b:
+            continue
+
+        norm_bbox = {
+            "x": round(x / float(W), 4),
+            "y": round(y / float(H), 4),
+            "w": round(w / float(W), 4),
+            "h": round(h / float(H), 4),
+        }
+
+        patches.append({
+            "patch_id": f"ROI-{idx + 1:03d}",
+            "patch_a": patch_a,
+            "patch_b": patch_b,
+            "b64_a": base64.b64encode(buf_a.tobytes()).decode("utf-8"),
+            "b64_b": base64.b64encode(buf_b.tobytes()).decode("utf-8"),
+            "raw_bbox": {"x": x, "y": y, "w": w, "h": h},
+            "norm_bbox": norm_bbox,
+            "location": f"Zone (X: {int(norm_bbox['x'] * 100)}%, Y: {int(norm_bbox['y'] * 100)}%)",
         })
 
-    regions.sort(key=lambda r: r['area'], reverse=True)
-    return regions
-
-
-def crop_region(img: np.ndarray, region: dict) -> np.ndarray:
-    if img is None:
-        return np.zeros((0, 0), dtype=np.uint8)
-    x, y, w, h = region["x"], region["y"], region["w"], region["h"]
-    H, W = img.shape[:2]
-    x1, y1 = max(0, x), max(0, y)
-    x2, y2 = min(W, x + w), min(H, y + h)
-    return img[y1:y2, x1:x2]
-
-
-def get_region_location_description(region: dict, image_shape: tuple) -> str:
-    """Return human-readable spatial location description based on region bbox center (e.g. 'top-left area')."""
-    H, W = image_shape[:2]
-    cx = (region.get("x", 0) + region.get("w", 0) / 2.0) / max(1, W)
-    cy = (region.get("y", 0) + region.get("h", 0) / 2.0) / max(1, H)
-
-    row_desc = "top" if cy < 0.33 else ("bottom" if cy > 0.66 else "middle")
-    col_desc = "left" if cx < 0.33 else ("right" if cx > 0.66 else "center")
-
-    if row_desc == "middle" and col_desc == "center":
-        return "center area of the drawing"
-    return f"{row_desc}-{col_desc} area of the drawing"
-
-
-def extract_paired_crops(old_gray: np.ndarray, new_gray_aligned: np.ndarray, regions: list, pad_pct: float = 0.35) -> list:
-    """
-    For each region in regions, extract crop from old_gray and aligned new_gray_aligned
-    with generous contextual padding (30-40%), and stitch them side-by-side [OLD (left) | divider | NEW (right)].
-    Returns list of stitched image patches (np.ndarray).
-    """
-    H, W = old_gray.shape[:2]
-    patches = []
-    divider_width = 4
-    
-    for reg in regions:
-        bbox = reg.get("bbox", reg)
-        x, y, w, h = bbox["x"], bbox["y"], bbox["w"], bbox["h"]
-        pad_x = max(15, int(w * pad_pct))
-        pad_y = max(15, int(h * pad_pct))
-        
-        x1 = max(0, x - pad_x)
-        y1 = max(0, y - pad_y)
-        x2 = min(W, x + w + pad_x)
-        y2 = min(H, y + h + pad_y)
-        
-        crop_old = old_gray[y1:y2, x1:x2]
-        crop_new = new_gray_aligned[y1:y2, x1:x2]
-        
-        # Ensure 3-channel BGR images for visualization/stitching with clear divider
-        if crop_old.ndim == 2:
-            crop_old_bgr = cv2.cvtColor(crop_old, cv2.COLOR_GRAY2BGR)
-        else:
-            crop_old_bgr = crop_old.copy()
-            
-        if crop_new.ndim == 2:
-            crop_new_bgr = cv2.cvtColor(crop_new, cv2.COLOR_GRAY2BGR)
-        else:
-            crop_new_bgr = crop_new.copy()
-            
-        h_old, w_old = crop_old_bgr.shape[:2]
-        h_new, w_new = crop_new_bgr.shape[:2]
-        
-        # Match height if slight mismatch
-        target_h = max(h_old, h_new)
-        if h_old != target_h:
-            crop_old_bgr = cv2.resize(crop_old_bgr, (w_old, target_h), interpolation=cv2.INTER_AREA)
-        if h_new != target_h:
-            crop_new_bgr = cv2.resize(crop_new_bgr, (w_new, target_h), interpolation=cv2.INTER_AREA)
-            
-        divider = np.zeros((target_h, divider_width, 3), dtype=np.uint8)
-        divider[:, :] = (0, 0, 255)  # Bright red divider between OLD and NEW
-        
-        stitched = np.hstack([crop_old_bgr, divider, crop_new_bgr])
-        patches.append(stitched)
-        
     return patches
-
-
-
-def make_grid_regions(shape, rows=4, cols=4):
-    """Return deterministic positional tiles covering an image."""
-    height, width = shape[:2]
-    regions = []
-    for row in range(rows):
-        y0 = round(row * height / rows)
-        y1 = round((row + 1) * height / rows)
-        for col in range(cols):
-            x0 = round(col * width / cols)
-            x1 = round((col + 1) * width / cols)
-            regions.append({
-                "x": x0,
-                "y": y0,
-                "w": max(1, x1 - x0),
-                "h": max(1, y1 - y0),
-                "area": (x1 - x0) * (y1 - y0),
-                "row": row,
-                "col": col,
-            })
-    return regions
-
-
-
-def redesign_metrics(mask, similarity_score, alignment_info, regions):
-    """Calculate signals used to decide whether page-level OCR is unsafe."""
-    image_area = max(1, mask.shape[0] * mask.shape[1])
-    diff_coverage = float(np.count_nonzero(mask)) / image_area
-    largest_region_ratio = 0.0
-    if regions:
-        largest_region_ratio = float(regions[0]["w"] * regions[0]["h"]) / image_area
-    return {
-        "diff_coverage": round(diff_coverage, 4),
-        "largest_region_ratio": round(largest_region_ratio, 4),
-        "similarity": round(float(similarity_score), 4),
-        "alignment_confidence": round(float(alignment_info.get("confidence", 0)), 4),
-    }
-
-
-
-def is_redesign(metrics, similarity_threshold=0.65, alignment_threshold=0.35,
-                coverage_threshold=0.45, region_threshold=0.60):
-    """Use multiple signals; one noisy metric should not force tiled mode."""
-    return (
-        metrics["alignment_confidence"] < alignment_threshold
-        or metrics["similarity"] < similarity_threshold
-        or metrics["diff_coverage"] > coverage_threshold
-        or metrics["largest_region_ratio"] > region_threshold
-    )

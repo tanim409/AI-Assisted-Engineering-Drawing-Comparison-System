@@ -57,9 +57,17 @@ def _page_count_for_bytes(data: bytes, original_filename: str) -> int:
 
 
 async def _register_revision(drawing_id: str, file: UploadFile, revision_label: str | None, owner_user_id: int) -> dict:
+    try:
+        await file.seek(0)
+    except Exception:
+        pass
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail=f"File '{file.filename}' is empty")
+
+    MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail=f"File '{file.filename}' exceeds the 50MB limit")
 
     page_count = _page_count_for_bytes(data, file.filename or "")
     revision_id = str(uuid.uuid4())
@@ -212,8 +220,13 @@ async def upload_and_compare(
     ) or DEFAULT_DRAWING_NAME
 
     drawing = versioning_db.create_drawing(user_id, default_name)
-    old_rev = await _register_revision(drawing["drawing_id"], old_drawing, old_revision_label, user_id)
-    new_rev = await _register_revision(drawing["drawing_id"], new_drawing, new_revision_label, user_id)
+    try:
+        old_rev = await _register_revision(drawing["drawing_id"], old_drawing, old_revision_label, user_id)
+        new_rev = await _register_revision(drawing["drawing_id"], new_drawing, new_revision_label, user_id)
+    except Exception:
+        # Rollback orphaned drawing record if revision upload fails
+        versioning_db.delete_drawing(drawing["drawing_id"], owner_user_id=user_id)
+        raise
 
     drawing_resp = {"drawing_id": drawing["drawing_id"], "name": drawing["name"], "created_at": str(drawing["created_at"])}
     revisions_resp = [_revision_response(old_rev), _revision_response(new_rev)]
@@ -249,12 +262,25 @@ def create_drawing(payload: CreateDrawingRequest | None = None, current_user: di
 
 
 @router.get("/drawings", tags=["Drawings"])
-def list_drawings(current_user: dict = Depends(auth.get_current_user)):
+def list_drawings(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    current_user: dict = Depends(auth.get_current_user)
+):
     user_id = current_user["user_id"]
-    drawings = versioning_db.list_drawings(user_id)
+    drawings = versioning_db.list_drawings(user_id, limit=limit, offset=offset)
+    total_count = versioning_db.count_user_drawings(user_id)
     for d in drawings:
         d["created_at"] = str(d["created_at"])
-    return JSONResponse(content={"drawings": drawings})
+        if "updated_at" in d and d["updated_at"]:
+            d["updated_at"] = str(d["updated_at"])
+    return JSONResponse(content={
+        "drawings": drawings,
+        "total_count": total_count,
+        "limit": limit,
+        "offset": offset,
+    })
+
 
 
 @router.patch("/drawings/{drawing_id}", tags=["Drawings"])
@@ -318,7 +344,7 @@ def render_drawing_revision(
     revision_id: str,
     page: int = Query(default=1, ge=1),
     dpi: float = Query(default=150.0, ge=30.0, le=600.0),
-    current_user: dict = Depends(auth.get_current_user_or_query),
+    current_user: dict = Depends(auth.get_current_user),
 ):
     user_id = current_user["user_id"]
     drawing = versioning_db.get_drawing(drawing_id, owner_user_id=user_id)

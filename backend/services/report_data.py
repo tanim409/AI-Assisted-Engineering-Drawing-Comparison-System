@@ -10,9 +10,13 @@ from psycopg.errors import UniqueViolation
 
 
 def _compute_content_hash(old_bytes: bytes, new_bytes: bytes) -> str:
-    """Compute a deterministic hash of the input file pair."""
-    combined = old_bytes + b"|" + new_bytes
-    return hashlib.sha256(combined).hexdigest()
+    """Compute a deterministic hash of the input file pair with length prefixes to prevent collisions."""
+    h = hashlib.sha256()
+    h.update(len(old_bytes).to_bytes(8, "big"))
+    h.update(old_bytes)
+    h.update(len(new_bytes).to_bytes(8, "big"))
+    h.update(new_bytes)
+    return h.hexdigest()
 
 
 def reserve_report(old_bytes: bytes, new_bytes: bytes, owner_user_id: int) -> Optional[tuple]:
@@ -137,6 +141,7 @@ def save_report_page(report_id: str, page: Dict[str, Any], owner_user_id: Option
     page_match_score = page.get("page_match_score")
     comparison_mode = page.get("comparison_mode")
     redesign_detected = page.get("redesign_detected", False)
+    pipeline_version = page.get("pipeline_version", "legacy")
 
     alignment = page.get("alignment", {})
     alignment_match_count = alignment.get("match_count")
@@ -166,8 +171,9 @@ def save_report_page(report_id: str, page: Dict[str, Any], owner_user_id: Option
                     alignment_confidence, alignment_error, render_dpi,
                     page_size_pts_width, page_size_pts_height,
                     page_size_mismatch, page_size_mismatch_details,
-                    overall_similarity, overall_summary, changes, annotated_source_png, created_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    overall_similarity, overall_summary, changes, total_changes, annotated_source_png,
+                    pipeline_version, created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             """, (
                 report_id,
                 page_number,
@@ -176,7 +182,7 @@ def save_report_page(report_id: str, page: Dict[str, Any], owner_user_id: Option
                 page_match_method,
                 page_match_score,
                 comparison_mode,
-                bool(redesign_detected),
+                redesign_detected,
                 alignment_match_count,
                 alignment_inlier_count,
                 alignment_confidence,
@@ -184,13 +190,16 @@ def save_report_page(report_id: str, page: Dict[str, Any], owner_user_id: Option
                 render_dpi,
                 page_size_pts_width,
                 page_size_pts_height,
-                bool(page_size_mismatch_page),
+                page_size_mismatch_page,
                 json.dumps(page_size_mismatch_details_page) if page_size_mismatch_details_page else None,
                 overall_similarity,
                 overall_summary,
                 json.dumps(changes),
+                len(changes),
                 annotated_source_png,
+                pipeline_version,
             ))
+
 
 
 def complete_report(report_id: str, total_pages: int, page_matching: dict, 
@@ -353,6 +362,7 @@ def get_full_report(report_id: str, owner_user_id: Optional[int] = None) -> Opti
                 "height": page_row["page_size_pts_height"]
             }
 
+        changes_list = json.loads(page_row["changes"] or "[]")
         page = {
             "page_number": page_row["page_number"],
             "matched_new_page_number": page_row["matched_new_page_number"],
@@ -373,8 +383,8 @@ def get_full_report(report_id: str, owner_user_id: Optional[int] = None) -> Opti
             "page_size_mismatch_details": json.loads(page_row["page_size_mismatch_details"]) if page_row["page_size_mismatch_details"] else None,
             "overall_similarity": page_row["overall_similarity"],
             "overall_summary": page_row["overall_summary"],
-            "changes": json.loads(page_row["changes"]),
-            "total_changes": len(json.loads(page_row["changes"])),
+            "changes": changes_list,
+            "total_changes": len(changes_list),
         }
         report["pages"].append(page)
     attach_reviews_to_pages(report_id, report["pages"], owner_user_id=owner_user_id)
@@ -411,60 +421,130 @@ def get_full_report(report_id: str, owner_user_id: Optional[int] = None) -> Opti
 
 
 
-def list_user_reports(owner_user_id: int) -> List[Dict[str, Any]]:
+def list_user_reports(owner_user_id: int, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
     with connect() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT r.report_id, r.created_at, r.total_pages,
-                       COUNT(rp.id) AS page_count,
-                       COALESCE(AVG(rp.overall_similarity), 0) AS avg_similarity
+                       COALESCE(AVG(rp.overall_similarity), 1.0) AS avg_similarity,
+                       COALESCE(SUM(rp.total_changes), 0) AS total_changes
                 FROM reports r
                 LEFT JOIN report_pages rp ON rp.report_id = r.report_id
                 WHERE r.owner_user_id = %s AND r.status = 'complete'
                 GROUP BY r.report_id, r.created_at, r.total_pages
                 ORDER BY r.created_at DESC
-            """, (owner_user_id,))
+                LIMIT %s OFFSET %s
+            """, (owner_user_id, limit, offset))
             rows = cursor.fetchall()
             
     reports = []
     for r in rows:
-        report_id = r["report_id"]
-        full = get_full_report(report_id, owner_user_id=owner_user_id)
-        if not full:
-            continue
-        total_changes = sum(len(p.get("changes", [])) for p in full.get("pages", []))
-        first_page_similarity = full["pages"][0].get("overall_similarity") if full.get("pages") else None
-        overall_sim = first_page_similarity if first_page_similarity is not None else float(r["avg_similarity"])
         reports.append({
-            "report_id": report_id,
+            "report_id": r["report_id"],
             "created_at": str(r["created_at"]),
             "total_pages": r["total_pages"],
-            "total_changes": total_changes,
-            "overall_similarity": overall_sim,
+            "total_changes": int(r["total_changes"]),
+            "overall_similarity": float(r["avg_similarity"]),
         })
     return reports
 
 
-def delete_report(report_id: str, owner_user_id: Optional[int] = None) -> bool:
+def get_report_summary(report_id: str, owner_user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """Lightweight report fetch — returns metadata and change counts but NOT page images or full change data."""
+    report_id = resolve_report_id(report_id, owner_user_id=owner_user_id)
     with connect() as conn:
         with conn.cursor() as cursor:
-            # Check ownership if requested
             if owner_user_id is not None:
-                cursor.execute("SELECT 1 FROM reports WHERE report_id = %s AND owner_user_id = %s", (report_id, owner_user_id))
-                if not cursor.fetchone():
-                    return False
-
-            cursor.execute("DELETE FROM change_reviews WHERE report_id = %s", (report_id,))
-            cursor.execute("DELETE FROM report_pages WHERE report_id = %s", (report_id,))
-            cursor.execute("DELETE FROM report_aliases WHERE alias_id = %s OR report_id = %s", (report_id, report_id))
-            cursor.execute("DELETE FROM comparisons WHERE comparison_id = %s", (report_id,))
-            if owner_user_id is not None:
-                cursor.execute("DELETE FROM reports WHERE report_id = %s AND owner_user_id = %s", (report_id, owner_user_id))
+                cursor.execute(
+                    "SELECT * FROM reports WHERE report_id = %s AND (owner_user_id IS NULL OR owner_user_id = %s) AND status = 'complete'",
+                    (report_id, owner_user_id),
+                )
             else:
-                cursor.execute("DELETE FROM reports WHERE report_id = %s", (report_id,))
-            affected = cursor.rowcount
-            conn.commit()
-    return affected > 0
+                cursor.execute("SELECT * FROM reports WHERE report_id = %s AND status = 'complete'", (report_id,))
+            report_row = cursor.fetchone()
+            if not report_row:
+                return None
+
+            # Fetch only page-level metadata (numbers, status) without heavy fields
+            if owner_user_id is not None:
+                cursor.execute(
+                    f"""SELECT rp.page_number, rp.matched_new_page_number, rp.page_status,
+                               rp.overall_similarity, rp.total_changes
+                        FROM report_pages rp
+                        JOIN reports r ON r.report_id = rp.report_id
+                        WHERE rp.report_id = %s AND r.owner_user_id = %s {_PAGE_ORDER_SQL}""",
+                    (report_id, owner_user_id),
+                )
+            else:
+                cursor.execute(
+                    f"""SELECT page_number, matched_new_page_number, page_status,
+                               overall_similarity, total_changes
+                        FROM report_pages WHERE report_id = %s {_PAGE_ORDER_SQL}""",
+                    (report_id,),
+                )
+            page_rows = cursor.fetchall()
+
+    total_changes = sum(row["total_changes"] or 0 for row in page_rows)
+    sims = [row["overall_similarity"] for row in page_rows if row["overall_similarity"] is not None]
+    overall_sim = round(sum(sims) / len(sims), 3) if sims else 1.0
+
+    report = {
+        "report_id": report_row["report_id"],
+        "owner_user_id": report_row["owner_user_id"],
+        "content_hash": report_row["content_hash"],
+        "total_pages": report_row["total_pages"],
+        "page_matching": json.loads(report_row["page_matching"]) if report_row["page_matching"] else None,
+        "common_render_dpi": report_row["common_render_dpi"],
+        "page_size_mismatch": bool(report_row["page_size_mismatch"]),
+        "page_size_mismatch_details": json.loads(report_row["page_size_mismatch_details"]) if report_row["page_size_mismatch_details"] else None,
+        "created_at": str(report_row["created_at"]),
+        "pages": [
+            {
+                "page_number": row["page_number"],
+                "matched_new_page_number": row["matched_new_page_number"],
+                "page_status": row["page_status"],
+                "overall_similarity": row["overall_similarity"],
+                "total_changes": row["total_changes"] or 0,
+            }
+            for row in page_rows
+        ],
+        "total_changes": total_changes,
+        "overall_similarity": overall_sim,
+        "overall_summary": report_row.get("overall_summary") or "",
+    }
+    return report
+
+
+def list_user_reports(owner_user_id: int, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT r.report_id, r.owner_user_id, r.status, r.total_pages, r.created_at,
+                       COALESCE(SUM(rp.total_changes), 0) AS total_changes,
+                       COALESCE(AVG(rp.overall_similarity), 1.0) AS overall_similarity,
+                       MAX(rp.overall_summary) AS overall_summary
+                FROM reports r
+                LEFT JOIN report_pages rp ON rp.report_id = r.report_id
+                WHERE r.owner_user_id = %s AND r.status = 'complete'
+                GROUP BY r.report_id, r.owner_user_id, r.status, r.total_pages, r.created_at
+                ORDER BY r.created_at DESC
+                LIMIT %s OFFSET %s
+            """, (owner_user_id, limit, offset))
+            rows = cursor.fetchall()
+
+    reports = []
+    for r in rows:
+        reports.append({
+            "report_id": r["report_id"],
+            "owner_user_id": r["owner_user_id"],
+            "status": r["status"],
+            "total_pages": r["total_pages"],
+            "created_at": str(r["created_at"]),
+            "total_changes": int(r["total_changes"]),
+            "overall_similarity": round(float(r["overall_similarity"]), 3) if r["overall_similarity"] is not None else 1.0,
+            "overall_summary": r["overall_summary"] or "Comparison completed.",
+        })
+    return reports
 
 
 
@@ -564,3 +644,21 @@ def get_annotated_export_pages(report_id: str, owner_user_id: Optional[int] = No
         }
         for row in rows
     ]
+
+
+def delete_report(report_id: str, owner_user_id: Optional[int] = None) -> bool:
+    """Delete a report record and all cascading pages, aliases, and reviews."""
+    real_id = resolve_report_id(report_id, owner_user_id=owner_user_id)
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            if owner_user_id is not None:
+                cursor.execute(
+                    "DELETE FROM reports WHERE report_id = %s AND owner_user_id = %s",
+                    (real_id, owner_user_id),
+                )
+            else:
+                cursor.execute("DELETE FROM reports WHERE report_id = %s", (real_id,))
+            affected = cursor.rowcount
+            cursor.execute("DELETE FROM report_aliases WHERE alias_id = %s OR report_id = %s", (report_id, real_id))
+    return affected > 0
+

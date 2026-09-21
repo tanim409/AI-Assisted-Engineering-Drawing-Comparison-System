@@ -66,8 +66,11 @@ def init_versioning_db():
                 );
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_drawings_owner ON drawings (owner_user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_drawings_owner_created ON drawings (owner_user_id, created_at DESC)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_revisions_drawing ON revisions (drawing_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_revisions_drawing_uploaded ON revisions (drawing_id, uploaded_at DESC)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_comparisons_drawing ON comparisons (drawing_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_owner_status ON reports (owner_user_id, status)")
 
 
 # ---------------------------------------------------------------- drawings
@@ -176,18 +179,31 @@ def delete_drawing(drawing_id: str, owner_user_id: Optional[int] = None) -> bool
     return affected > 0
 
 
-def list_drawings(owner_user_id: int) -> List[Dict[str, Any]]:
+def count_user_drawings(owner_user_id: int) -> int:
     with connect() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("""
+            cursor.execute("SELECT COUNT(*) AS cnt FROM drawings WHERE owner_user_id = %s", (owner_user_id,))
+            row = cursor.fetchone()
+    return row["cnt"] if row else 0
+
+
+def list_drawings(owner_user_id: int, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
                 SELECT d.drawing_id, d.owner_user_id, d.name, d.created_at,
-                       COUNT(r.revision_id) AS revision_count
+                       COUNT(r.revision_id) AS revision_count,
+                       COALESCE(MAX(r.uploaded_at), d.created_at) AS updated_at
                 FROM drawings d
                 LEFT JOIN revisions r ON r.drawing_id = d.drawing_id
                 WHERE d.owner_user_id = %s
                 GROUP BY d.drawing_id, d.owner_user_id, d.name, d.created_at
                 ORDER BY d.created_at DESC, d.drawing_id
-            """, (owner_user_id,))
+                LIMIT %s OFFSET %s
+                """,
+                (owner_user_id, limit, offset)
+            )
             rows = cursor.fetchall()
     return [dict(r) for r in rows]
 
@@ -318,6 +334,7 @@ def delete_revision(revision_id: str, owner_user_id: Optional[int] = None) -> bo
     if not rev:
         return False
 
+    affected = 0
     with connect() as conn:
         with conn.cursor() as cursor:
             # Find comparison_ids associated with this revision

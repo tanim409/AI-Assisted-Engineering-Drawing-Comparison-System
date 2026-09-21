@@ -100,8 +100,8 @@ export const Header: React.FC<HeaderProps> = ({
           {result && asyncState === 'success' && (
             <div className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-[13px] font-semibold text-emerald-800">
               <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span>Systems Aligned</span>
-              <span className="font-mono">({result.alignmentScore}%)</span>
+              <span>VLM Verified</span>
+              <span className="font-mono">({result.alignmentScore}% similarity)</span>
             </div>
           )}
 
